@@ -6,7 +6,7 @@ require('../assets/js/data.js');
 require('../assets/js/finance.js');
 
 const { createInitialState } = globalThis.VALHALLA.data;
-const { calculateDashboard, validateMovement, addMovement } = globalThis.VALHALLA.finance;
+const { calculateDashboard, getDashboardHighlights, validateMovement, addMovement } = globalThis.VALHALLA.finance;
 
 test('calculateDashboard returns expected projection and available amount', () => {
   const state = createInitialState();
@@ -22,21 +22,51 @@ test('calculateDashboard returns expected projection and available amount', () =
   assert.equal(dashboard.realAvailable, 220000);
 });
 
-test('validateMovement rejects negative amounts, empty dates and duplicates', () => {
+test('validateMovement rejects negative amounts, empty dates, missing account and duplicates', () => {
   const state = createInitialState();
   const valid = {
     type: 'expense',
     amount: 10000,
-    category: 'Monster',
+    category: 'Monster / bebidas',
     date: '2026-08-04',
     description: 'Monster',
-    segment: 'personal'
+    segment: 'personal',
+    accountId: state.accounts[0].id
   };
 
   assert.equal(validateMovement(state, valid).valid, true);
   assert.equal(validateMovement(state, { ...valid, amount: -1 }).valid, false);
   assert.equal(validateMovement(state, { ...valid, date: '' }).valid, false);
+  assert.equal(validateMovement(state, { ...valid, accountId: '' }).valid, false);
+  assert.equal(validateMovement(state, { ...valid, category: '' }).valid, false);
 
   addMovement(state, valid);
   assert.equal(validateMovement(state, valid).valid, false);
+});
+
+test('calculateDashboard exposes account balances and excludes non-operational accounts from the operating view', () => {
+  const state = createInitialState();
+  state.accounts[0].initialBalance = 100000;
+  state.accounts[1].initialBalance = 50000;
+  state.accounts[1].isOperational = false;
+  state.profile.initial_cash = 0;
+
+  const dashboard = calculateDashboard(state, new Date('2026-08-15'));
+
+  assert.equal(dashboard.totalAccountsBalance, 150000);
+  assert.equal(dashboard.operatingBalance, 100000);
+});
+
+test('getDashboardHighlights builds the dashboard cards for the new home shell', () => {
+  const state = createInitialState();
+  state.profile.minimum_reserve = 50000;
+  state.profile.savings_goal = 200000;
+  state.clients.push({ id: 'c1', name: 'Ana', status: 'pending', continues: true, renewal_day: 20, amount: 90000 });
+
+  const highlights = getDashboardHighlights(state, new Date('2026-08-15'));
+
+  assert.equal(highlights[0].title, 'Finanzas');
+  assert.equal(highlights[1].summary, '1 clientes');
+  assert.equal(highlights[4].summary, '$200.000');
+  assert.equal(highlights[4].buttonLabel, 'Configurar');
 });

@@ -45,15 +45,77 @@
     return state.movements.filter((movement) => movement.date && movement.date.slice(0, 7) === monthKey);
   }
 
-  function calculateDashboard(state, referenceDate = new Date()) {
-    const monthMovements = getMonthMovements(state, referenceDate);
-    const incomesReceived = monthMovements.filter((m) => m.type === 'income').reduce((sum, m) => sum + Number(m.amount || 0), 0);
-    const expensesMade = monthMovements.filter((m) => m.type === 'expense').reduce((sum, m) => sum + Number(m.amount || 0), 0);
+  function getAccountById(state, accountId) {
+    return state.accounts.find((account) => account.id === accountId) || null;
+  }
 
-    const recurringItems = state.recurring.filter((item) => item.active);
+  function getOperationalAccounts(state) {
+    return (state.accounts || []).filter((account) => account.isActive !== false && account.isOperational !== false);
+  }
+
+  function getDashboardHighlights(state, referenceDate = new Date(), selectedSegment = 'global') {
+    const dashboard = calculateDashboard(state, referenceDate, selectedSegment);
+    const reserve = Number(state.profile.minimum_reserve || 0);
+    const savingsGoal = Number(state.profile.savings_goal || 0);
+    const activeClients = (state.clients || []).filter((client) => client.continues && client.status !== 'paid');
+    const upcomingItems = dashboard.upcomingItems || [];
+
+    return [
+      {
+        title: 'Finanzas',
+        summary: formatCurrency(dashboard.realAvailable),
+        detail: dashboard.realAvailable < reserve ? 'Reserva mínima comprometida' : 'Disponible real para operar',
+        badge: dashboard.realAvailable < reserve ? 'Atención' : 'En orden',
+        nav: 'register',
+        buttonLabel: 'Registrar'
+      },
+      {
+        title: 'Clientes',
+        summary: (state.clients || []).length ? `${(state.clients || []).length} clientes` : 'Sin información',
+        detail: activeClients.length ? `${activeClients.length} pagos por revisar` : 'No hay clientes pendientes',
+        badge: (state.clients || []).length ? 'Activos' : 'Pendiente',
+        nav: 'clients',
+        buttonLabel: 'Ver clientes'
+      },
+      {
+        title: 'Agenda',
+        summary: upcomingItems.length ? `${upcomingItems.length} próximos` : 'Sin información',
+        detail: upcomingItems[0] ? upcomingItems[0].name : 'Aún no hay fechas destacadas',
+        badge: upcomingItems.length ? 'Próximos' : 'Sin datos',
+        nav: 'register',
+        buttonLabel: 'Ver historial'
+      },
+      {
+        title: 'Alertas',
+        summary: dashboard.realAvailable < reserve ? 'Reserva baja' : 'Sin información',
+        detail: dashboard.suggestedSavings > 0 ? `Ahorro sugerido ${formatCurrency(dashboard.suggestedSavings)}` : 'Todo se ve estable',
+        badge: dashboard.realAvailable < reserve ? 'Atención' : 'Estable',
+        nav: 'settings',
+        buttonLabel: 'Ajustes'
+      },
+      {
+        title: 'Objetivos',
+        summary: savingsGoal > 0 ? formatCurrency(savingsGoal) : 'Sin información',
+        detail: dashboard.suggestedSavings > 0 ? `Meta de ahorro ${formatCurrency(dashboard.suggestedSavings)}` : 'Define tu meta de ahorro',
+        badge: savingsGoal > 0 ? 'Meta' : 'Pendiente',
+        nav: 'settings',
+        buttonLabel: 'Configurar'
+      }
+    ];
+  }
+
+  function calculateDashboard(state, referenceDate = new Date(), selectedSegment = 'global') {
+    const monthMovements = getMonthMovements(state, referenceDate);
+    const filteredMovements = selectedSegment && selectedSegment !== 'global'
+      ? monthMovements.filter((movement) => (movement.segment || 'personal') === selectedSegment)
+      : monthMovements;
+    const incomesReceived = filteredMovements.filter((m) => m.type === 'income').reduce((sum, m) => sum + Number(m.amount || 0), 0);
+    const expensesMade = filteredMovements.filter((m) => m.type === 'expense').reduce((sum, m) => sum + Number(m.amount || 0), 0);
+
+    const recurringItems = (state.recurringTransactions || state.recurring || []).filter((item) => item.active);
     const pendingCommitments = recurringItems.reduce((sum, item) => {
       if (item.type === 'expense') {
-        const installmentFactor = item.id === 'debt' ? Number(item.installments_pending || 0) : 1;
+        const installmentFactor = item.id === 'debt' ? Number(item.installments_pending || item.installmentsPending || 0) : 1;
         return sum + getRecurringDates(item, referenceDate).reduce((innerSum) => innerSum + Number(item.amount || 0) * installmentFactor, 0);
       }
       return sum;
@@ -78,10 +140,15 @@
       }
     });
 
+    const accountBalance = (state.accounts || []).reduce((sum, account) => sum + Number(account.initialBalance || 0), 0);
+    const operatingBalance = getOperationalAccounts(state).reduce((sum, account) => sum + Number(account.initialBalance || 0), 0);
     const initialCash = Number(state.profile.initial_cash || 0);
     const projection = initialCash + incomesReceived - expensesMade - pendingCommitments;
-    const realAvailable = projection - Number(state.profile.minimum_reserve || 0);
-    const suggestedSavings = Math.max(0, Math.round(Math.max(0, projection - Number(state.profile.minimum_reserve || 0)) * (state.settings.savings_rate || 0.5)));
+    const reserve = Number(state.profile.minimum_reserve || 0);
+    const realAvailable = projection - reserve;
+    const suggestedSavings = Math.max(0, Math.round(Math.max(0, projection - reserve) * (state.settings.savings_rate || 0.5)));
+
+    const debtPending = (state.debts || []).reduce((sum, debt) => sum + (Number(debt.amountPerInstallment || 0) * Number(debt.installmentsPending || 0)), 0);
 
     return {
       incomesReceived,
@@ -90,7 +157,10 @@
       projection,
       realAvailable,
       suggestedSavings,
-      upcomingItems: upcomingItems.sort((a, b) => a.date - b.date)
+      upcomingItems: upcomingItems.sort((a, b) => a.date - b.date),
+      totalAccountsBalance: accountBalance,
+      operatingBalance,
+      debtPending
     };
   }
 
@@ -98,6 +168,8 @@
     const errors = [];
     if (!movement.date) errors.push('La fecha es obligatoria');
     if (Number(movement.amount) <= 0) errors.push('El monto debe ser mayor a cero');
+    if (!movement.accountId) errors.push('La cuenta es obligatoria');
+    if (!movement.category) errors.push('La categoría es obligatoria');
     const duplicate = state.movements.some((item) => item.date === movement.date && item.description === movement.description && Number(item.amount) === Number(movement.amount));
     if (duplicate) errors.push('El movimiento ya existe');
     return { valid: errors.length === 0, errors };
@@ -112,6 +184,8 @@
       date: movement.date,
       description: movement.description,
       segment: movement.segment,
+      accountId: movement.accountId,
+      metadata: movement.metadata || {},
       created_at: new Date().toISOString()
     };
 
@@ -178,6 +252,7 @@
   window.VALHALLA.finance = {
     formatCurrency,
     calculateDashboard,
+    getDashboardHighlights,
     validateMovement,
     addMovement,
     removeMovement,

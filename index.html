@@ -3,22 +3,43 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#111827">
+  <meta name="theme-color" content="#080808">
   <link rel="manifest" href="./manifest.json">
   <title>VALHALLA Finanzas</title>
   <link rel="stylesheet" href="./assets/css/styles.css">
 </head>
 <body>
   <div class="app" id="app">
-    <header>
-      <div>
-        <h1>VALHALLA</h1>
-        <div class="subtle">Control financiero personal y Vikingos Radical</div>
+    <header class="app-header">
+      <div class="brand">
+        <img class="brand-logo" src="./assets/images/logo-vikingos.png" alt="Vikingos Radical">
+        <div class="brand-copy">
+          <h1>VALHALLA</h1>
+          <div class="subtle">Control financiero personal y Vikingos Radical</div>
+        </div>
       </div>
-      <span class="badge">v0.5</span>
+      <div class="header-actions">
+        <span class="user-pill">Usuario</span>
+        <span class="badge" id="cloudModeBadge">Modo Local</span>
+        <span class="badge">v0.6.1</span>
+      </div>
     </header>
 
     <section id="home">
+      <div class="card hero-card">
+        <div class="hero-content">
+          <div>
+            <p class="eyebrow">Panel principal</p>
+            <h2>Tu centro de control en menos de 15 segundos</h2>
+            <p class="muted">Registra ingresos y gastos, revisa clientes y mantén tus metas al alcance de la mano.</p>
+          </div>
+          <div class="hero-actions">
+            <button class="primary" type="button" data-nav="register">Registrar</button>
+            <button class="secondary" type="button" data-nav="clients">Clientes</button>
+          </div>
+        </div>
+      </div>
+      <div id="dashboardCards" class="dashboard-grid"></div>
       <div class="grid">
         <div class="card metric">
           <small>Caja inicial</small>
@@ -58,6 +79,7 @@
           <button class="primary" type="submit">Guardar caja inicial</button>
         </form>
       </div>
+      <div id="dashboardSummary"></div>
       <div class="card">
         <h2>Lectura del mes</h2>
         <div id="advice" class="notice"></div>
@@ -92,43 +114,40 @@
             </div>
             <div>
               <label for="category">Categoría</label>
-              <select id="category" name="category">
-                <option value="Monster">Monster</option>
-                <option value="Magic">Magic</option>
-                <option value="supermercado">Supermercado</option>
-                <option value="bencina">Bencina</option>
-                <option value="alumno">Alumno</option>
-                <option value="sueldo">Sueldo</option>
-                <option value="otro">Otro</option>
+              <select id="category" name="category"></select>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="accountId">Cuenta</label>
+              <select id="accountId" name="accountId"></select>
+            </div>
+            <div>
+              <label for="segment">Separación</label>
+              <select id="segment" name="segment">
+                <option value="personal">Personal</option>
+                <option value="business">Vikingos</option>
               </select>
             </div>
           </div>
           <div>
             <label for="description">Descripción</label>
-            <input id="description" name="description" placeholder="Ej. Monster para reunión" required>
+            <input id="description" name="description" placeholder="Opcional" required>
           </div>
-          <div>
-            <label for="segment">Separación</label>
-            <select id="segment" name="segment">
-              <option value="personal">Personal</option>
-              <option value="business">Negocio</option>
-            </select>
-          </div>
-          <div class="chips">
-            <button class="chip" type="button" data-quick-category="Monster">Monster</button>
-            <button class="chip" type="button" data-quick-category="Magic">Magic</button>
-            <button class="chip" type="button" data-quick-category="supermercado">Supermercado</button>
-            <button class="chip" type="button" data-quick-category="bencina">Bencina</button>
-            <button class="chip" type="button" data-quick-category="alumno">Alumno</button>
-            <button class="chip" type="button" data-quick-category="sueldo">Sueldo</button>
-            <button class="chip" type="button" data-quick-category="otro">Otro</button>
-          </div>
+          <div class="chips" id="quickCategories"></div>
           <button class="primary" type="submit">Guardar movimiento</button>
           <div id="formMessage" class="notice"></div>
         </form>
       </div>
       <div class="card">
-        <h2>Movimientos del mes</h2>
+        <div class="section-title">
+          <h2>Movimientos del mes</h2>
+          <select id="segmentFilter">
+            <option value="global">Resumen global</option>
+            <option value="personal">Personal</option>
+            <option value="business">Vikingos</option>
+          </select>
+        </div>
         <div id="movementsTable"></div>
       </div>
     </section>
@@ -136,6 +155,7 @@
     <section id="clients" class="hidden">
       <div class="card">
         <h2>Clientes</h2>
+        <div id="authPanel" class="notice"></div>
         <div id="clientList"></div>
       </div>
     </section>
@@ -199,6 +219,20 @@
       </div>
     </section>
 
+    <section id="nutrition" class="hidden">
+      <div class="card">
+        <div class="section-title">
+          <h2>Nutrición</h2>
+        </div>
+        <div id="nutritionMessage" class="notice"></div>
+        <div id="nutritionSummary"></div>
+        <div id="nutritionPlans"></div>
+        <div id="nutritionAssignment"></div>
+        <div id="nutritionDaily"></div>
+        <div id="nutritionProgress"></div>
+      </div>
+    </section>
+
     <section id="settings" class="hidden">
       <div class="card">
         <h2>Ajustes</h2>
@@ -223,6 +257,11 @@
         </form>
       </div>
       <div class="card">
+        <h2>Cuentas</h2>
+        <div id="accountSettings"></div>
+        <div id="accountSettingsMessage" class="notice"></div>
+      </div>
+      <div class="card">
         <h2>Respaldo</h2>
         <button class="secondary" id="exportBtn" type="button">Exportar valhalla.json</button>
         <label for="fileInput">Importar respaldo</label>
@@ -238,11 +277,16 @@
       <button type="button" data-nav="register">Registrar</button>
       <button type="button" data-nav="clients">Clientes</button>
       <button type="button" data-nav="trainings">Entrenamientos</button>
+      <button type="button" data-nav="nutrition">Nutrición</button>
       <button type="button" data-nav="settings">Ajustes</button>
     </div>
   </nav>
 
+  <script src="./assets/js/config.js"></script>
   <script src="./assets/js/data.js"></script>
+  <script src="./assets/js/supabase.js"></script>
+  <script src="./assets/js/auth.js"></script>
+  <script src="./assets/js/cloud-data.js"></script>
   <script src="./assets/js/finance.js"></script>
   <script src="./assets/js/app.js"></script>
 </body>
