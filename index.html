@@ -1,117 +1,249 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#111827">
-<link rel="manifest" href="manifest.json">
-<title>VALHALLA Finanzas</title>
-<style>
-:root{--bg:#f3f4f6;--card:#fff;--text:#111827;--muted:#6b7280;--line:#e5e7eb;--ok:#166534;--warn:#92400e;--bad:#b91c1c}
-*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--text)}
-.app{max-width:980px;margin:auto;padding:16px 16px 92px}header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
-h1{margin:0}.sub{color:var(--muted);font-size:14px;margin-top:3px}.badge{background:#e5e7eb;border-radius:999px;padding:5px 9px;font-size:12px}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.card{background:var(--card);border-radius:18px;padding:16px;box-shadow:0 2px 12px rgba(0,0,0,.06);margin-bottom:14px}
-.metric small{display:block;color:var(--muted);margin-bottom:5px}.metric strong{font-size:24px}.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}label{display:block;font-weight:700;margin:10px 0 5px}
-input,select,button{width:100%;padding:13px;border-radius:12px;border:1px solid #d1d5db;font-size:16px;background:white}
-button{background:#111827;color:white;border:0;font-weight:700;cursor:pointer}.secondary{background:#374151}.quick-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.quick{padding:18px;font-size:17px}
-.item{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}.item:last-child{border-bottom:0}.muted{color:var(--muted);font-size:13px}
-.notice{padding:13px;border:1px solid var(--line);border-radius:12px;background:#f9fafb}.hidden{display:none}
-.nav{position:fixed;left:0;right:0;bottom:0;background:white;border-top:1px solid var(--line);display:flex;justify-content:center;padding:8px env(safe-area-inset-right) calc(8px + env(safe-area-inset-bottom)) env(safe-area-inset-left);z-index:10}
-.nav-inner{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;width:min(100%,700px)}.nav button{background:white;color:#374151;padding:10px 6px;font-size:13px}.nav button.active{background:#111827;color:white}
-@media(max-width:760px){.grid{grid-template-columns:1fr 1fr}}@media(max-width:520px){.grid,.row{grid-template-columns:1fr}.quick-grid{grid-template-columns:1fr 1fr}}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <link rel="manifest" href="./manifest.json">
+  <title>VALHALLA Finanzas</title>
+  <link rel="stylesheet" href="./assets/css/styles.css">
 </head>
 <body>
-<div class="app">
-<header><div><h1>VALHALLA</h1><div class="sub">Control financiero personal y Vikingos Radical</div></div><span class="badge">v0.4</span></header>
+  <div class="app" id="app">
+    <header>
+      <div>
+        <h1>VALHALLA</h1>
+        <div class="subtle">Control financiero personal y Vikingos Radical</div>
+      </div>
+      <span class="badge">v0.5</span>
+    </header>
 
-<section id="home">
-<div class="grid">
-<div class="card metric"><small>Disponible real</small><strong id="available">$0</strong></div>
-<div class="card metric"><small>Proyección fin de mes</small><strong id="projection">$0</strong></div>
-<div class="card metric"><small>Ahorro sugerido</small><strong id="saving">$0</strong></div>
-<div class="card metric"><small>Gastos hormiga</small><strong id="ant">$0</strong></div>
-</div>
-<div class="card"><h2>Lectura del mes</h2><div id="advice" class="notice"></div></div>
-<div class="card"><h2>Próximos movimientos</h2><div id="upcoming"></div></div>
-</section>
+    <section id="home">
+      <div class="grid">
+        <div class="card metric">
+          <small>Caja inicial</small>
+          <strong id="initialCash">$0</strong>
+        </div>
+        <div class="card metric">
+          <small>Ingresos recibidos</small>
+          <strong id="incomes">$0</strong>
+        </div>
+        <div class="card metric">
+          <small>Gastos realizados</small>
+          <strong id="expenses">$0</strong>
+        </div>
+        <div class="card metric">
+          <small>Gastos comprometidos</small>
+          <strong id="pending">$0</strong>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card metric">
+          <small>Proyección fin de mes</small>
+          <strong id="projection">$0</strong>
+        </div>
+        <div class="card metric">
+          <small>Disponible real</small>
+          <strong id="available">$0</strong>
+        </div>
+        <div class="card metric">
+          <small>Ahorro sugerido</small>
+          <strong id="saving">$0</strong>
+        </div>
+      </div>
+      <div class="card">
+        <form id="cashForm" class="form-grid">
+          <label for="initialCashInput">Caja inicial editable</label>
+          <input id="initialCashInput" name="initialCash" type="number" min="0" step="1000">
+          <button class="primary" type="submit">Guardar caja inicial</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Lectura del mes</h2>
+        <div id="advice" class="notice"></div>
+      </div>
+      <div class="card">
+        <h2>Próximos movimientos</h2>
+        <div id="upcoming"></div>
+      </div>
+    </section>
 
-<section id="quick" class="hidden">
-<div class="card"><h2>Registrar gasto rápido</h2>
-<div class="quick-grid">
-<button class="quick" onclick="pick('Monster / Bebidas','Monster')">🥤 Monster</button>
-<button class="quick" onclick="pick('Supermercado','Supermercado')">🛒 Super</button>
-<button class="quick" onclick="pick('Bencina','Bencina')">⛽ Bencina</button>
-<button class="quick" onclick="pick('Magic','Carta Magic')">🃏 Magic</button>
-</div>
-<label>Monto</label><input id="amount" type="number" inputmode="numeric" placeholder="$0">
-<label>Detalle</label><input id="detail" placeholder="Ej: agua y Monster">
-<label>Categoría</label><select id="category"><option>Monster / Bebidas</option><option>Supermercado</option><option>Bencina</option><option>Magic</option><option>Negocio</option><option>Otro</option></select>
-<button style="margin-top:12px" onclick="saveExpense()">Guardar gasto</button>
-<div id="saveMsg" class="notice" style="margin-top:12px">Sin registros nuevos.</div></div>
-<div class="card"><h2>Movimientos de hoy</h2><div id="todayList"></div></div>
-</section>
+    <section id="register" class="hidden">
+      <div class="card">
+        <h2>Registrar movimiento</h2>
+        <form id="movementForm" class="form-grid">
+          <div class="row">
+            <div>
+              <label for="type">Tipo</label>
+              <select id="type" name="type">
+                <option value="expense">Gasto</option>
+                <option value="income">Ingreso</option>
+              </select>
+            </div>
+            <div>
+              <label for="date">Fecha</label>
+              <input id="date" name="date" type="date" required>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="amount">Monto</label>
+              <input id="amount" name="amount" type="number" min="0" step="1000" required>
+            </div>
+            <div>
+              <label for="category">Categoría</label>
+              <select id="category" name="category">
+                <option value="Monster">Monster</option>
+                <option value="Magic">Magic</option>
+                <option value="supermercado">Supermercado</option>
+                <option value="bencina">Bencina</option>
+                <option value="alumno">Alumno</option>
+                <option value="sueldo">Sueldo</option>
+                <option value="otro">Otro</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label for="description">Descripción</label>
+            <input id="description" name="description" placeholder="Ej. Monster para reunión" required>
+          </div>
+          <div>
+            <label for="segment">Separación</label>
+            <select id="segment" name="segment">
+              <option value="personal">Personal</option>
+              <option value="business">Negocio</option>
+            </select>
+          </div>
+          <div class="chips">
+            <button class="chip" type="button" data-quick-category="Monster">Monster</button>
+            <button class="chip" type="button" data-quick-category="Magic">Magic</button>
+            <button class="chip" type="button" data-quick-category="supermercado">Supermercado</button>
+            <button class="chip" type="button" data-quick-category="bencina">Bencina</button>
+            <button class="chip" type="button" data-quick-category="alumno">Alumno</button>
+            <button class="chip" type="button" data-quick-category="sueldo">Sueldo</button>
+            <button class="chip" type="button" data-quick-category="otro">Otro</button>
+          </div>
+          <button class="primary" type="submit">Guardar movimiento</button>
+          <div id="formMessage" class="notice"></div>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Movimientos del mes</h2>
+        <div id="movementsTable"></div>
+      </div>
+    </section>
 
-<section id="clients" class="hidden"><div class="card"><h2>Clientes y renovaciones</h2><div id="clientList"></div></div></section>
+    <section id="clients" class="hidden">
+      <div class="card">
+        <h2>Clientes</h2>
+        <div id="clientList"></div>
+      </div>
+    </section>
 
-<section id="settings" class="hidden">
-<div class="card"><h2>Ajustes</h2>
-<label>Reserva mínima</label><input id="reserve" type="number">
-<label>Presupuesto Magic mensual</label><input id="magicBudget" type="number">
-<label>Presupuesto gastos hormiga</label><input id="antBudget" type="number">
-<button style="margin-top:12px" onclick="saveSettings()">Guardar configuración</button></div>
-<div class="card"><h2>Respaldo</h2>
-<button onclick="exportData()">Exportar valhalla.json</button>
-<label>Importar respaldo</label><input id="fileInput" type="file" accept=".json,application/json">
-<button class="secondary" style="margin-top:10px" onclick="importData()">Importar archivo</button></div>
-</section>
-</div>
+    <section id="trainings" class="hidden">
+      <div class="card">
+        <div class="section-title">
+          <h2>Entrenamientos</h2>
+        </div>
+        <form id="routineForm" class="form-grid">
+          <div class="row">
+            <div>
+              <label for="studentId">Alumno</label>
+              <select id="studentId" name="studentId">
+                <option value="alumno-1">Martín</option>
+                <option value="alumno-2">Camila</option>
+              </select>
+            </div>
+            <div>
+              <label for="routineName">Nombre de rutina</label>
+              <input id="routineName" name="name" placeholder="Rutina fuerza A" required>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="routineDate">Fecha</label>
+              <input id="routineDate" name="date" type="date" required>
+            </div>
+            <div>
+              <label for="exercise">Ejercicio</label>
+              <input id="exercise" name="exercise" placeholder="Sentadilla" required>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="sets">Series</label>
+              <input id="sets" name="sets" type="number" min="1" required>
+            </div>
+            <div>
+              <label for="reps">Repeticiones</label>
+              <input id="reps" name="reps" type="number" min="1" required>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="weight">Peso objetivo</label>
+              <input id="weight" name="weight" type="number" min="0" required>
+            </div>
+            <div>
+              <label for="rest">Descanso</label>
+              <input id="rest" name="rest" placeholder="90 sec" required>
+            </div>
+          </div>
+          <button class="primary" type="submit">Guardar rutina</button>
+          <div id="routineMessage" class="notice"></div>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Alumnos</h2>
+        <div id="trainingsStudents"></div>
+      </div>
+    </section>
 
-<div class="nav"><div class="nav-inner">
-<button id="nav-home" class="active" onclick="show('home')">Inicio</button>
-<button id="nav-quick" onclick="show('quick')">Registrar</button>
-<button id="nav-clients" onclick="show('clients')">Clientes</button>
-<button id="nav-settings" onclick="show('settings')">Ajustes</button>
-</div></div>
+    <section id="settings" class="hidden">
+      <div class="card">
+        <h2>Ajustes</h2>
+        <form id="settingsForm" class="form-grid">
+          <div>
+            <label for="reserve">Reserva mínima</label>
+            <input id="reserve" name="reserve" type="number" min="0">
+          </div>
+          <div>
+            <label for="magicBudget">Presupuesto mensual Magic</label>
+            <input id="magicBudget" name="magicBudget" type="number" min="0">
+          </div>
+          <div>
+            <label for="antBudget">Presupuesto mensual gastos hormiga</label>
+            <input id="antBudget" name="antBudget" type="number" min="0">
+          </div>
+          <div>
+            <label for="savingsGoal">Meta de ahorro</label>
+            <input id="savingsGoal" name="savingsGoal" type="number" min="0">
+          </div>
+          <button class="primary" type="submit">Guardar ajustes</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Respaldo</h2>
+        <button class="secondary" id="exportBtn" type="button">Exportar valhalla.json</button>
+        <label for="fileInput">Importar respaldo</label>
+        <input id="fileInput" type="file" accept=".json,application/json">
+        <div id="importMessage" class="notice"></div>
+      </div>
+    </section>
+  </div>
 
-<script>
-const INITIAL={profile:{name:"Sebastián",minimum_reserve:50000},settings:{magic_budget:30000,ant_budget:30000,savings_rate:.5},movements:[],recurring:[
-{id:"salary",type:"income",name:"Sueldo sábado",amount:250000,frequency:"weekly",weekday:6,active:true},
-{id:"rent",type:"expense",name:"Arriendo",amount:550000,frequency:"monthly",day:1,active:true},
-{id:"light",type:"expense",name:"Luz",amount:89000,frequency:"monthly",day:10,active:true},
-{id:"internet",type:"expense",name:"Internet",amount:20000,frequency:"monthly",day:10,active:true},
-{id:"fuel",type:"expense",name:"Bencina",amount:120000,frequency:"monthly",day:5,active:true},
-{id:"market",type:"expense",name:"Supermercado semanal",amount:80000,frequency:"weekly",weekday:6,active:true},
-{id:"debt",type:"expense",name:"Cuota 5 de 12",amount:100000,frequency:"monthly",day:5,active:true}
-],clients:[
-{id:"nacho",name:"Nacho",service:"Semi",amount:70000,renewal_day:2,status:"pending",continues:true},
-{id:"claudia",name:"Claudia",service:"Semi",amount:70000,renewal_day:3,status:"paid",continues:true},
-{id:"romi",name:"Romi Meridaz",service:"Semi",amount:70000,renewal_day:8,status:"pending",continues:true},
-{id:"helen",name:"Helen",service:"Semi",amount:70000,renewal_day:11,status:"pending",continues:true},
-{id:"jeanette",name:"Jeanette",service:"Semi",amount:70000,renewal_day:11,status:"pending",continues:true},
-{id:"cristina",name:"Cristina",service:"Semi",amount:70000,renewal_day:15,status:"pending",continues:true},
-{id:"rodrigo",name:"Rodrigo",service:"Personalizado",amount:90000,renewal_day:3,status:"pending",continues:true},
-{id:"renato",name:"Renato",service:"Personalizado",amount:60000,renewal_day:7,status:"uncertain",continues:false},
-{id:"gerardo",name:"Gerardo",service:"Personalizado",amount:120000,renewal_day:7,status:"uncertain",continues:false}
-]};
-let db=JSON.parse(localStorage.getItem("valhalla_v04")||JSON.stringify(INITIAL));
-const CLP=n=>new Intl.NumberFormat("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}).format(Math.round(n||0));
-const now=new Date();
-function persist(){localStorage.setItem("valhalla_v04",JSON.stringify(db));render()}
-function show(id){["home","quick","clients","settings"].forEach(x=>document.getElementById(x).classList.toggle("hidden",x!==id));["home","quick","clients","settings"].forEach(x=>document.getElementById("nav-"+x).classList.toggle("active",x===id));render()}
-function endMonth(){return new Date(now.getFullYear(),now.getMonth()+1,0,23,59,59)}
-function datesFor(r){let out=[],end=endMonth(),d=new Date();if(r.frequency==="monthly"){d=new Date(now.getFullYear(),now.getMonth(),Math.min(r.day||1,end.getDate()));if(d>=now&&d<=end)out.push(d)}else{while(d.getDay()!==Number(r.weekday))d.setDate(d.getDate()+1);while(d<=end){out.push(new Date(d));d.setDate(d.getDate()+7)}}return out}
-function calc(){const ym=now.toISOString().slice(0,7),mov=db.movements.filter(x=>x.date.slice(0,7)===ym);let ai=0,ae=0,fi=0,fe=0,up=[];mov.forEach(x=>x.type==="income"?ai+=x.amount:ae+=x.amount);db.recurring.filter(x=>x.active).forEach(r=>datesFor(r).forEach(d=>{if(r.type==="income")fi+=r.amount;else fe+=r.amount;up.push({name:r.name,amount:r.amount,type:r.type,date:d})}));db.clients.filter(x=>x.continues&&x.status!=="paid").forEach(c=>{const d=new Date(now.getFullYear(),now.getMonth(),c.renewal_day);if(d>=now&&d<=endMonth()){fi+=c.amount;up.push({name:"Cobro "+c.name,amount:c.amount,type:"income",date:d})}});const net=ai-ae+fi-fe,available=ai-ae-fe,reserve=db.profile.minimum_reserve||0,suggested=Math.max(0,Math.floor(Math.max(0,net-reserve)*(db.settings.savings_rate||.5)/1000)*1000),ant=mov.filter(x=>x.type==="expense"&&["Monster / Bebidas","Magic","Otro"].includes(x.category)).reduce((s,x)=>s+x.amount,0);return{net,available,suggested,ant,up:up.sort((a,b)=>a.date-b.date)}}
-function pick(cat,det){category.value=cat;detail.value=det;amount.focus()}
-function saveExpense(){const v=Number(amount.value);if(!v)return alert("Ingresa un monto");db.movements.push({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),type:"expense",amount:v,category:category.value,date:new Date().toISOString().slice(0,10),detail:detail.value||category.value,created_at:new Date().toISOString()});saveMsg.textContent=`Guardado: ${detail.value||category.value} por ${CLP(v)}`;amount.value="";detail.value="";persist()}
-function markPaid(id){const c=db.clients.find(x=>x.id===id);if(!c)return;c.status="paid";db.movements.push({id:String(Date.now()),type:"income",amount:c.amount,category:"Alumno",date:new Date().toISOString().slice(0,10),detail:"Pago "+c.name,created_at:new Date().toISOString()});persist()}
-function saveSettings(){db.profile.minimum_reserve=Number(reserve.value)||0;db.settings.magic_budget=Number(magicBudget.value)||0;db.settings.ant_budget=Number(antBudget.value)||0;persist()}
-function exportData(){const blob=new Blob([JSON.stringify(db,null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="valhalla.json";a.click();URL.revokeObjectURL(a.href)}
-function importData(){const f=fileInput.files[0];if(!f)return alert("Selecciona un archivo");const r=new FileReader();r.onload=()=>{try{db=JSON.parse(r.result);persist();alert("Datos importados")}catch(e){alert("Archivo inválido")}};r.readAsText(f)}
-function render(){const c=calc();available.textContent=CLP(c.available);projection.textContent=CLP(c.net);saving.textContent=CLP(c.suggested);ant.textContent=CLP(c.ant);advice.innerHTML=c.net<0?`🔴 Terminarías el mes en <b>${CLP(c.net)}</b>. Prioriza cobros y congela compras impulsivas.`:c.ant>(db.settings.ant_budget||30000)?`🟡 Ya superaste tu presupuesto de gastos hormiga. Proyección: <b>${CLP(c.net)}</b>.`:`🟢 Proyección de cierre: <b>${CLP(c.net)}</b>. Podrías separar <b>${CLP(c.suggested)}</b> para ahorro.`;upcoming.innerHTML=c.up.slice(0,10).map(x=>`<div class="item"><div><b>${x.name}</b><div class="muted">${x.date.toLocaleDateString("es-CL")}</div></div><div class="${x.type==="income"?"ok":"bad"}">${x.type==="income"?"+":"-"}${CLP(x.amount)}</div></div>`).join("")||'<div class="muted">Sin movimientos próximos.</div>';const today=new Date().toISOString().slice(0,10);todayList.innerHTML=db.movements.filter(x=>x.date===today).slice().reverse().map(x=>`<div class="item"><div><b>${x.detail}</b><div class="muted">${x.category}</div></div><div class="${x.type==="income"?"ok":"bad"}">${x.type==="income"?"+":"-"}${CLP(x.amount)}</div></div>`).join("")||'<div class="muted">Sin movimientos hoy.</div>';clientList.innerHTML=db.clients.map(c=>`<div class="item"><div><b>${c.name}</b><div class="muted">${c.service} · día ${c.renewal_day} · ${c.status}</div></div><div><b>${CLP(c.amount)}</b>${c.status!=="paid"&&c.continues?`<button style="margin-top:6px" onclick="markPaid('${c.id}')">Marcar pagado</button>`:""}</div></div>`).join("");reserve.value=db.profile.minimum_reserve||0;magicBudget.value=db.settings.magic_budget||0;antBudget.value=db.settings.ant_budget||0}
-render();
-if("serviceWorker" in navigator)navigator.serviceWorker.register("./service-worker.js").catch(()=>{});
-</script>
-</body></html>
+  <nav class="nav">
+    <div class="nav-inner">
+      <button class="active" type="button" data-nav="home">Inicio</button>
+      <button type="button" data-nav="register">Registrar</button>
+      <button type="button" data-nav="clients">Clientes</button>
+      <button type="button" data-nav="trainings">Entrenamientos</button>
+      <button type="button" data-nav="settings">Ajustes</button>
+    </div>
+  </nav>
+
+  <script src="./assets/js/data.js"></script>
+  <script src="./assets/js/finance.js"></script>
+  <script src="./assets/js/app.js"></script>
+</body>
+</html>
