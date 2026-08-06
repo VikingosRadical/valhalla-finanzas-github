@@ -52,3 +52,12 @@
 - Se aplicó una identidad visual oscura y premium inspirada en Vikingos Radical.
 - Se actualizó la cabecera con logo preparado, versión y espacio para el usuario futuro.
 - Se reforzó el contraste de formularios, tarjetas, botones y navegación inferior para móviles y escritorio.
+
+## VALHALLA v0.6.2 — Ajustes visuales, contraste y actualización móvil - 2026-08-04
+
+### Nuevas capacidades
+
+- Se ajustó la paleta a una identidad más sobria, elegante y minimalista.
+- Se corrigió la legibilidad de selects, inputs y opciones en el flujo de registro.
+- Se mejoró el contraste de etiquetas, botones y valores financieros para PC y móvil.
+- Se actualizó el service worker para refrescar estilos e imágenes en dispositivos móviles.

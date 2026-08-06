@@ -12,7 +12,10 @@
   <div class="app" id="app">
     <header class="app-header">
       <div class="brand">
-        <img class="brand-logo" src="./assets/images/logo-vikingos.png" alt="Vikingos Radical">
+        <div class="brand-mark">
+          <img class="brand-logo" src="./assets/images/logo-vikingos.png" alt="Vikingos Radical" onerror="this.style.display='none'; this.parentElement.classList.add('brand-mark--fallback');">
+          <span class="brand-fallback">VR</span>
+        </div>
         <div class="brand-copy">
           <h1>VALHALLA</h1>
           <div class="subtle">Control financiero personal y Vikingos Radical</div>
