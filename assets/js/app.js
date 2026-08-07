@@ -2,6 +2,7 @@
   const dataApi = window.VALHALLA.data;
   const financeApi = window.VALHALLA.finance;
   const supabaseApi = window.VALHALLA.supabase;
+  const cloudDataApi = window.VALHALLA.cloudData;
 
   const state = dataApi.loadState();
   const nutritionUi = {
@@ -9,15 +10,47 @@
     editingPlanId: null,
     dailyDate: new Date().toISOString().slice(0, 10)
   };
+  const trainingUi = {
+    selectedClientId: '',
+    selectedExercise: '',
+    activeSessionId: '',
+    activeExerciseId: '',
+    editingSetNumber: null
+  };
+  const studentUi = {
+    enabled: false,
+    clientId: '',
+    sessionId: '',
+    exerciseIndex: 0,
+    editingSetNumber: null,
+    restRemaining: 0,
+    restRunning: false,
+    restTimerId: null,
+    startedAt: null
+  };
+  const clientUi = {
+    search: '',
+    filter: 'all',
+    editingId: null,
+    detailId: state.clients[0]?.id || '',
+    formOpen: false,
+    saving: false,
+    notice: '',
+    noticeTone: 'neutral',
+    records: (state.clients || []).map((client) => normalizeClientRecord(client)),
+    loading: false
+  };
 
   const els = {
     cloudModeBadge: document.getElementById('cloudModeBadge'),
     authPanel: document.getElementById('authPanel'),
+    nav: document.querySelector('.nav'),
     sections: {
       home: document.getElementById('home'),
       register: document.getElementById('register'),
       clients: document.getElementById('clients'),
       trainings: document.getElementById('trainings'),
+      studentTraining: document.getElementById('studentTraining'),
       nutrition: document.getElementById('nutrition'),
       settings: document.getElementById('settings')
     },
@@ -43,9 +76,71 @@
     accountSettings: document.getElementById('accountSettings'),
     accountSettingsMessage: document.getElementById('accountSettingsMessage'),
     clientList: document.getElementById('clientList'),
+    clientDetail: document.getElementById('clientDetail'),
+    clientFormPanel: document.getElementById('clientFormPanel'),
+    clientForm: document.getElementById('clientForm'),
+    clientFormTitle: document.getElementById('clientFormTitle'),
+    clientFormMessage: document.getElementById('clientFormMessage'),
+    clientMessage: document.getElementById('clientMessage'),
+    clientSearch: document.getElementById('clientSearch'),
+    clientNewBtn: document.getElementById('newClientBtn'),
+    clientCancelBtn: document.getElementById('clientCancelBtn'),
+    clientSubmitBtn: document.getElementById('clientSubmitBtn'),
+    clientCount: document.getElementById('clientCount'),
     trainingsStudents: document.getElementById('trainingsStudents'),
     routineForm: document.getElementById('routineForm'),
     routineMessage: document.getElementById('routineMessage'),
+    trainingClientNotice: document.getElementById('trainingClientNotice'),
+    studentId: document.getElementById('studentId'),
+    restPreset: document.getElementById('restPreset'),
+    restInput: document.getElementById('rest'),
+    routineDate: document.getElementById('routineDate'),
+    historyClientId: document.getElementById('historyClientId'),
+    historyExercise: document.getElementById('historyExercise'),
+    trainingProgressSummary: document.getElementById('trainingProgressSummary'),
+    currentExerciseTitle: document.getElementById('currentExerciseTitle'),
+    trainingLastRecord: document.getElementById('trainingLastRecord'),
+    setProgressLabel: document.getElementById('setProgressLabel'),
+    setWeightInput: document.getElementById('setWeightInput'),
+    setRepsInput: document.getElementById('setRepsInput'),
+    setCompletedInput: document.getElementById('setCompletedInput'),
+    saveSetBtn: document.getElementById('saveSetBtn'),
+    setEntryList: document.getElementById('setEntryList'),
+    setRecordNotice: document.getElementById('setRecordNotice'),
+    editingSetNumber: document.getElementById('editingSetNumber'),
+    studentBackBtn: document.getElementById('studentBackBtn'),
+    studentName: document.getElementById('studentName'),
+    studentSessionTitle: document.getElementById('studentSessionTitle'),
+    studentSessionDate: document.getElementById('studentSessionDate'),
+    studentExerciseProgress: document.getElementById('studentExerciseProgress'),
+    studentSessionProgressBar: document.getElementById('studentSessionProgressBar'),
+    studentSessionProgressText: document.getElementById('studentSessionProgressText'),
+    studentExerciseName: document.getElementById('studentExerciseName'),
+    studentExercisePlan: document.getElementById('studentExercisePlan'),
+    studentExerciseTarget: document.getElementById('studentExerciseTarget'),
+    studentExerciseRest: document.getElementById('studentExerciseRest'),
+    studentExerciseLast: document.getElementById('studentExerciseLast'),
+    studentLastWeight: document.getElementById('studentLastWeight'),
+    studentLastReps: document.getElementById('studentLastReps'),
+    studentBestWeight: document.getElementById('studentBestWeight'),
+    studentTechniqueNote: document.getElementById('studentTechniqueNote'),
+    studentWeightInput: document.getElementById('studentWeightInput'),
+    studentRepsInput: document.getElementById('studentRepsInput'),
+    studentSetCompleted: document.getElementById('studentSetCompleted'),
+    studentEditingSetNumber: document.getElementById('studentEditingSetNumber'),
+    studentSaveSetBtn: document.getElementById('studentSaveSetBtn'),
+    studentSetNotice: document.getElementById('studentSetNotice'),
+    studentSetList: document.getElementById('studentSetList'),
+    studentExerciseCompletedNotice: document.getElementById('studentExerciseCompletedNotice'),
+    studentNextExerciseBtn: document.getElementById('studentNextExerciseBtn'),
+    studentValidateRecordBtn: document.getElementById('studentValidateRecordBtn'),
+    studentRestValue: document.getElementById('studentRestValue'),
+    studentRestStartBtn: document.getElementById('studentRestStartBtn'),
+    studentRestPlusBtn: document.getElementById('studentRestPlusBtn'),
+    studentRestSkipBtn: document.getElementById('studentRestSkipBtn'),
+    studentSessionFinishPanel: document.getElementById('studentSessionFinishPanel'),
+    studentSessionSummary: document.getElementById('studentSessionSummary'),
+    studentFinalizeBtn: document.getElementById('studentFinalizeBtn'),
     reserve: document.getElementById('reserve'),
     magicBudget: document.getElementById('magicBudget'),
     antBudget: document.getElementById('antBudget'),
@@ -78,6 +173,923 @@
       .replace(/>/g, '&gt;')
       .replace(/\"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  function isCloudMode() {
+    return Boolean(supabaseApi && typeof supabaseApi.isCloudEnabled === 'function' && supabaseApi.isCloudEnabled());
+  }
+
+  function normalizeClientRecord(client) {
+    if (dataApi && typeof dataApi.normalizeClient === 'function') {
+      return dataApi.normalizeClient(client);
+    }
+    return client;
+  }
+
+  function normalizePhoneDigits(value) {
+    return String(value || '').replace(/\D/g, '');
+  }
+
+  function normalizeChileanPhoneForWhatsApp(value) {
+    const digits = normalizePhoneDigits(value);
+    if (!digits) {
+      return '';
+    }
+    if (digits.startsWith('56') && digits.length >= 11) {
+      return digits;
+    }
+    if (digits.length >= 8 && digits.length <= 9) {
+      return `56${digits}`;
+    }
+    if (digits.startsWith('0')) {
+      const withoutZero = digits.replace(/^0+/, '');
+      return withoutZero ? `56${withoutZero}` : '';
+    }
+    return digits;
+  }
+
+  function isValidDateInput(value) {
+    if (!value) {
+      return true;
+    }
+    const date = new Date(`${value}T00:00:00`);
+    return !Number.isNaN(date.getTime());
+  }
+
+  function formatClientDate(value) {
+    if (!value) {
+      return 'Sin fecha';
+    }
+    const date = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(date.getTime())) {
+      return 'Sin fecha';
+    }
+    return date.toLocaleDateString('es-CL');
+  }
+
+  function getTodayLocalDate() {
+    const today = new Date();
+    const timezoneOffset = today.getTimezoneOffset() * 60000;
+    return new Date(today.getTime() - timezoneOffset).toISOString().slice(0, 10);
+  }
+
+  function ensureDateValue(input) {
+    if (!input || input.value) {
+      return;
+    }
+    input.value = getTodayLocalDate();
+  }
+
+  function getActiveTrainingClients() {
+    return (state.clients || []).filter((client) => client.client_status === 'active' && client.active !== false);
+  }
+
+  function ensureTrainingsV08State() {
+    if (!state.trainingsV08 || typeof state.trainingsV08 !== 'object') {
+      state.trainingsV08 = { plans: [], sessions: [] };
+    }
+    if (!Array.isArray(state.trainingsV08.sessions)) {
+      state.trainingsV08.sessions = [];
+    }
+    if (!Array.isArray(state.trainingsV08.plans)) {
+      state.trainingsV08.plans = [];
+    }
+    if (!state.trainingModelVersion) {
+      state.trainingModelVersion = '0.8.0';
+    }
+  }
+
+  function getTrainingSessionsByClient(clientId) {
+    ensureTrainingsV08State();
+    return (state.trainingsV08.sessions || []).filter((session) => session.clientId === clientId);
+  }
+
+  function sortSessionsByDateAsc(sessions) {
+    return sessions.slice().sort((a, b) => {
+      const timeA = new Date(`${a.date || '1970-01-01'}T00:00:00`).getTime();
+      const timeB = new Date(`${b.date || '1970-01-01'}T00:00:00`).getTime();
+      return timeA - timeB;
+    });
+  }
+
+  function getSessionExercises(session) {
+    return Array.isArray(session?.exercises) ? session.exercises : [];
+  }
+
+  function getTrainingExercisesByClientExercise(clientId, exerciseName, options = {}) {
+    const normalizedExercise = String(exerciseName || '').trim().toLowerCase();
+    if (!normalizedExercise) {
+      return [];
+    }
+
+    const ignoreSessionId = options.ignoreSessionId || '';
+    const sessions = sortSessionsByDateAsc(getTrainingSessionsByClient(clientId));
+    const matches = [];
+    sessions.forEach((session) => {
+      if (ignoreSessionId && session.id === ignoreSessionId) {
+        return;
+      }
+      getSessionExercises(session).forEach((exercise) => {
+        const currentName = String(exercise.exerciseName || '').trim().toLowerCase();
+        if (currentName === normalizedExercise) {
+          matches.push({ session, exercise });
+        }
+      });
+    });
+    return matches;
+  }
+
+  function getExerciseOptionsForClient(clientId) {
+    const sessions = getTrainingSessionsByClient(clientId);
+    const unique = new Map();
+    sessions.forEach((session) => {
+      getSessionExercises(session).forEach((exercise) => {
+        const key = String(exercise.exerciseName || '').trim().toLowerCase();
+        if (!key) {
+          return;
+        }
+        if (!unique.has(key)) {
+          unique.set(key, exercise.exerciseName);
+        }
+      });
+    });
+    return Array.from(unique.values());
+  }
+
+  function getExerciseSets(exercise) {
+    return Array.isArray(exercise?.sets) ? exercise.sets : [];
+  }
+
+  function getBestWeightForExercise(clientId, exerciseName, options = {}) {
+    const matches = getTrainingExercisesByClientExercise(clientId, exerciseName, options);
+    const weights = [];
+    matches.forEach(({ exercise }) => {
+      getExerciseSets(exercise).forEach((setEntry) => {
+        const weight = Number(setEntry.weight || 0);
+        if (Number.isFinite(weight) && weight > 0) {
+          weights.push(weight);
+        }
+      });
+    });
+    return weights.length ? Math.max(...weights) : 0;
+  }
+
+  function buildLastSessionSummary(clientId, exerciseName, options = {}) {
+    if (!clientId || !exerciseName) {
+      return 'Sin registro anterior';
+    }
+
+    const matches = getTrainingExercisesByClientExercise(clientId, exerciseName, options);
+    if (!matches.length) {
+      return 'Sin registro anterior';
+    }
+
+    const last = matches[matches.length - 1];
+    const sets = getExerciseSets(last.exercise);
+    if (!sets.length) {
+      return `Última sesión: ${last.session.date ? formatClientDate(last.session.date) : 'sin fecha'} · sin series registradas`;
+    }
+
+    const compactSets = sets
+      .map((setEntry) => `${Number(setEntry.weight || 0)} kg × ${Number(setEntry.reps || 0)}`)
+      .filter((item) => item !== '0 kg × 0');
+
+    if (!compactSets.length) {
+      return `Última sesión: ${last.session.date ? formatClientDate(last.session.date) : 'sin fecha'} · sin series registradas`;
+    }
+
+    const bestWeight = getBestWeightForExercise(clientId, exerciseName, options);
+    return `Última sesión: ${compactSets.join(' | ')}${bestWeight > 0 ? ` · Mejor histórico ${bestWeight} kg` : ''}`;
+  }
+
+  function buildProgressSummary(clientId, exerciseName) {
+    if (!clientId || !exerciseName) {
+      return '<div class="muted">Sin registro anterior</div>';
+    }
+    const matches = getTrainingExercisesByClientExercise(clientId, exerciseName);
+    if (!matches.length) {
+      return '<div class="muted">Sin registro anterior</div>';
+    }
+
+    const last = matches[matches.length - 1];
+    const first = matches[0];
+    const lastSet = getExerciseSets(last.exercise)[getExerciseSets(last.exercise).length - 1] || null;
+    const firstSet = getExerciseSets(first.exercise)[0] || null;
+    const bestWeight = getBestWeightForExercise(clientId, exerciseName);
+    const completedSets = getExerciseSets(last.exercise).filter((setEntry) => setEntry.completed !== false).length;
+    const plannedSets = Number(last.exercise.plannedSets || 0);
+
+    return `
+      <div class="training-progress-grid">
+        <div><strong>Último registro</strong><div class="meta">${lastSet ? `${Number(lastSet.weight || 0)} kg × ${Number(lastSet.reps || 0)}` : 'Sin registro'}</div></div>
+        <div><strong>Mejor peso histórico</strong><div class="meta">${bestWeight > 0 ? `${bestWeight} kg` : 'Sin registro'}</div></div>
+        <div><strong>Primer registro</strong><div class="meta">${firstSet ? `${Number(firstSet.weight || 0)} kg × ${Number(firstSet.reps || 0)}` : 'Sin registro'}</div></div>
+        <div><strong>Fecha última sesión</strong><div class="meta">${last.session.date ? escapeHtml(formatClientDate(last.session.date)) : 'Sin fecha'}</div></div>
+        <div><strong>Series completadas</strong><div class="meta">${completedSets}${plannedSets ? ` de ${plannedSets}` : ''}</div></div>
+      </div>`;
+  }
+
+  function findSessionById(sessionId) {
+    ensureTrainingsV08State();
+    return (state.trainingsV08.sessions || []).find((session) => session.id === sessionId) || null;
+  }
+
+  function findExerciseInSession(session, exerciseId) {
+    return getSessionExercises(session).find((exercise) => exercise.id === exerciseId) || null;
+  }
+
+  function getCurrentTrainingSession() {
+    return findSessionById(trainingUi.activeSessionId);
+  }
+
+  function getCurrentTrainingExercise() {
+    const session = getCurrentTrainingSession();
+    if (!session) {
+      return null;
+    }
+    return findExerciseInSession(session, trainingUi.activeExerciseId);
+  }
+
+  function stopStudentRestTimer() {
+    if (studentUi.restTimerId) {
+      clearInterval(studentUi.restTimerId);
+      studentUi.restTimerId = null;
+    }
+    studentUi.restRunning = false;
+  }
+
+  function getClientById(clientId) {
+    return (state.clients || []).find((client) => client.id === clientId) || null;
+  }
+
+  function getStudentSessionForClient(clientId) {
+    const sessions = sortSessionsByDateAsc(getTrainingSessionsByClient(clientId));
+    if (!sessions.length) {
+      return null;
+    }
+    const today = getTodayLocalDate();
+    const todaySession = sessions.find((session) => session.date === today) || null;
+    if (todaySession) {
+      return todaySession;
+    }
+    return sessions[sessions.length - 1];
+  }
+
+  function enterStudentMode(clientId) {
+    const client = getClientById(clientId);
+    if (!client || client.client_status !== 'active' || client.active === false) {
+      setClientNotice('La vista alumno solo está disponible para clientes activos.', 'warn');
+      return;
+    }
+
+    const session = getStudentSessionForClient(clientId);
+    studentUi.enabled = true;
+    studentUi.clientId = clientId;
+    studentUi.sessionId = session?.id || '';
+    studentUi.exerciseIndex = 0;
+    studentUi.editingSetNumber = null;
+    studentUi.restRemaining = 0;
+    studentUi.startedAt = new Date().toISOString();
+    stopStudentRestTimer();
+    show('studentTraining');
+  }
+
+  function exitStudentMode() {
+    stopStudentRestTimer();
+    studentUi.enabled = false;
+    studentUi.clientId = '';
+    studentUi.sessionId = '';
+    studentUi.exerciseIndex = 0;
+    studentUi.editingSetNumber = null;
+    studentUi.restRemaining = 0;
+    studentUi.startedAt = null;
+    show('trainings');
+  }
+
+  function getStudentSession() {
+    if (!studentUi.sessionId) {
+      return null;
+    }
+    return findSessionById(studentUi.sessionId);
+  }
+
+  function getStudentExercises() {
+    const session = getStudentSession();
+    return session ? getSessionExercises(session) : [];
+  }
+
+  function getStudentExercise() {
+    const exercises = getStudentExercises();
+    if (!exercises.length) {
+      return null;
+    }
+    const safeIndex = Math.max(0, Math.min(studentUi.exerciseIndex, exercises.length - 1));
+    studentUi.exerciseIndex = safeIndex;
+    return exercises[safeIndex];
+  }
+
+  function isExerciseCompleted(exercise) {
+    const plannedSets = Number(exercise?.plannedSets || 0);
+    const doneSets = getExerciseSets(exercise).filter((setEntry) => setEntry.completed !== false).length;
+    return plannedSets > 0 && doneSets >= plannedSets;
+  }
+
+  function getPreviousExerciseMetrics(clientId, exerciseName, currentSessionId) {
+    const matches = getTrainingExercisesByClientExercise(clientId, exerciseName, { ignoreSessionId: currentSessionId });
+    if (!matches.length) {
+      return {
+        hasHistory: false,
+        label: 'Primera vez con este ejercicio',
+        lastWeight: 'Sin registro',
+        lastReps: 'Sin registro',
+        bestWeight: 'Sin registro'
+      };
+    }
+
+    const last = matches[matches.length - 1];
+    const sets = getExerciseSets(last.exercise);
+    const lastSet = sets[sets.length - 1] || null;
+    const bestWeight = getBestWeightForExercise(clientId, exerciseName, { ignoreSessionId: currentSessionId });
+    return {
+      hasHistory: true,
+      label: buildLastSessionSummary(clientId, exerciseName, { ignoreSessionId: currentSessionId }),
+      lastWeight: lastSet ? `${Number(lastSet.weight || 0)} kg` : 'Sin registro',
+      lastReps: lastSet ? `${Number(lastSet.reps || 0)}` : 'Sin registro',
+      bestWeight: bestWeight > 0 ? `${bestWeight} kg` : 'Sin registro'
+    };
+  }
+
+  function getStudentSessionStats(session) {
+    const exercises = getSessionExercises(session);
+    const completedExercises = exercises.filter((exercise) => isExerciseCompleted(exercise)).length;
+    const totalSets = exercises.reduce((sum, exercise) => sum + getExerciseSets(exercise).length, 0);
+    const potentialRecords = exercises.reduce((sum, exercise) => sum + getExerciseSets(exercise).filter((setEntry) => setEntry.personalRecord).length, 0);
+    const estimatedDurationMinutes = Math.max(1, Math.round(exercises.reduce((sum, exercise) => {
+      const planned = Number(exercise.plannedSets || 0);
+      const rest = Number(exercise.restSeconds || 0);
+      return sum + (planned * (rest + 45));
+    }, 0) / 60));
+    return {
+      completedExercises,
+      totalExercises: exercises.length,
+      totalSets,
+      potentialRecords,
+      estimatedDurationMinutes
+    };
+  }
+
+  function notifyRestFinished() {
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate([150, 80, 150]);
+    }
+    try {
+      if (typeof window !== 'undefined' && typeof window.AudioContext === 'function') {
+        const context = new window.AudioContext();
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.value = 880;
+        gain.gain.value = 0.04;
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start();
+        oscillator.stop(context.currentTime + 0.2);
+      }
+    } catch (_) {
+      // Silent fallback when audio is not available.
+    }
+  }
+
+  function startStudentRest() {
+    const exercise = getStudentExercise();
+    const restSeconds = Number(exercise?.restSeconds || 0);
+    if (!restSeconds) {
+      return;
+    }
+    stopStudentRestTimer();
+    studentUi.restRemaining = restSeconds;
+    studentUi.restRunning = true;
+    studentUi.restTimerId = setInterval(() => {
+      studentUi.restRemaining = Math.max(0, studentUi.restRemaining - 1);
+      if (studentUi.restRemaining <= 0) {
+        stopStudentRestTimer();
+        notifyRestFinished();
+      }
+      renderStudentTraining();
+    }, 1000);
+    renderStudentTraining();
+  }
+
+  function saveStudentSetEntry() {
+    const session = getStudentSession();
+    const exercise = getStudentExercise();
+    if (!session || !exercise) {
+      if (els.studentSetNotice) {
+        els.studentSetNotice.textContent = 'No hay ejercicio activo para registrar.';
+      }
+      return;
+    }
+
+    const weight = Number(els.studentWeightInput?.value || 0);
+    const reps = Number(els.studentRepsInput?.value || 0);
+    const completed = els.studentSetCompleted ? els.studentSetCompleted.checked : true;
+    if (!Number.isFinite(weight) || weight < 0 || !Number.isFinite(reps) || reps < 0) {
+      if (els.studentSetNotice) {
+        els.studentSetNotice.textContent = 'Ingresa valores válidos.';
+      }
+      return;
+    }
+
+    const sets = getExerciseSets(exercise);
+    const requestedSetNumber = Number(els.studentEditingSetNumber?.value || studentUi.editingSetNumber || 0);
+    const plannedSets = Math.max(1, Number(exercise.plannedSets || 1));
+    if (!requestedSetNumber && sets.length >= plannedSets) {
+      if (els.studentSetNotice) {
+        els.studentSetNotice.textContent = 'Ejercicio completado. Usa Siguiente ejercicio o corrige una serie.';
+      }
+      return;
+    }
+    const nextSetNumber = requestedSetNumber || (sets.length + 1);
+    const previousBestWeight = getBestWeightForExercise(session.clientId, exercise.exerciseName, { ignoreSessionId: session.id });
+    const isPotentialRecord = weight > previousBestWeight && weight > 0;
+
+    const existingSet = sets.find((setEntry) => Number(setEntry.setNumber || 0) === Number(nextSetNumber));
+    if (existingSet) {
+      existingSet.weight = weight;
+      existingSet.reps = reps;
+      existingSet.completed = completed;
+      existingSet.personalRecord = isPotentialRecord;
+      existingSet.techniqueStatus = existingSet.techniqueStatus || 'pending';
+      existingSet.coachValidated = Boolean(existingSet.coachValidated);
+    } else {
+      sets.push({
+        setNumber: nextSetNumber,
+        weight,
+        reps,
+        completed,
+        createdAt: new Date().toISOString(),
+        techniqueStatus: 'pending',
+        coachValidated: false,
+        personalRecord: isPotentialRecord
+      });
+    }
+    sets.sort((a, b) => Number(a.setNumber || 0) - Number(b.setNumber || 0));
+
+    studentUi.editingSetNumber = null;
+    if (els.studentEditingSetNumber) {
+      els.studentEditingSetNumber.value = '';
+    }
+    if (els.studentRepsInput) {
+      els.studentRepsInput.value = '';
+    }
+    if (els.studentSetNotice) {
+      els.studentSetNotice.textContent = isPotentialRecord ? '🏆 Posible nuevo récord' : 'Serie guardada';
+    }
+
+    const doneSets = sets.filter((setEntry) => setEntry.completed !== false).length;
+    if (doneSets < plannedSets && !els.studentWeightInput?.value) {
+      els.studentWeightInput.value = String(Number(exercise.targetWeight || 0));
+    }
+    persist();
+  }
+
+  function goToNextStudentExercise() {
+    const exercises = getStudentExercises();
+    if (!exercises.length) {
+      return;
+    }
+    if (studentUi.exerciseIndex < exercises.length - 1) {
+      studentUi.exerciseIndex += 1;
+      studentUi.editingSetNumber = null;
+      if (els.studentEditingSetNumber) {
+        els.studentEditingSetNumber.value = '';
+      }
+      if (els.studentSetNotice) {
+        els.studentSetNotice.textContent = '';
+      }
+      renderStudentTraining();
+      return;
+    }
+
+    const session = getStudentSession();
+    if (session) {
+      session.status = 'completed';
+    }
+    persist();
+  }
+
+  function finalizeStudentSession() {
+    const session = getStudentSession();
+    if (session) {
+      session.status = 'completed';
+    }
+    stopStudentRestTimer();
+    persist();
+    exitStudentMode();
+  }
+
+  function renderStudentTraining() {
+    if (!els.sections.studentTraining) {
+      return;
+    }
+
+    const client = getClientById(studentUi.clientId);
+    const session = getStudentSession();
+    const exercises = getStudentExercises();
+    const exercise = getStudentExercise();
+
+    if (!studentUi.enabled || !client || !session || !exercise) {
+      if (els.studentName) {
+        els.studentName.textContent = 'Sin sesión activa';
+      }
+      return;
+    }
+
+    const metrics = getPreviousExerciseMetrics(client.id, exercise.exerciseName, session.id);
+    const sets = getExerciseSets(exercise);
+    const doneSets = sets.filter((setEntry) => setEntry.completed !== false).length;
+    const plannedSets = Number(exercise.plannedSets || 0);
+    const progressText = `Ejercicio ${studentUi.exerciseIndex + 1} de ${Math.max(1, exercises.length)}`;
+    const sessionStats = getStudentSessionStats(session);
+    const progressPercent = sessionStats.totalExercises > 0
+      ? Math.round((sessionStats.completedExercises / sessionStats.totalExercises) * 100)
+      : 0;
+
+    if (els.studentName) {
+      els.studentName.textContent = getClientDisplayName(client);
+    }
+    if (els.studentSessionTitle) {
+      els.studentSessionTitle.textContent = session.title || 'Sesión de hoy';
+    }
+    if (els.studentSessionDate) {
+      els.studentSessionDate.textContent = formatClientDate(session.date || getTodayLocalDate());
+    }
+    if (els.studentExerciseProgress) {
+      els.studentExerciseProgress.textContent = progressText;
+    }
+    if (els.studentSessionProgressBar) {
+      els.studentSessionProgressBar.style.width = `${progressPercent}%`;
+    }
+    if (els.studentSessionProgressText) {
+      els.studentSessionProgressText.textContent = `${progressPercent}% completado`;
+    }
+
+    if (els.studentExerciseName) {
+      els.studentExerciseName.textContent = exercise.exerciseName;
+    }
+    if (els.studentExercisePlan) {
+      els.studentExercisePlan.textContent = `${plannedSets} series · ${Number(exercise.plannedRepMin || 0)}-${Number(exercise.plannedRepMax || 0)} repeticiones`;
+    }
+    if (els.studentExerciseTarget) {
+      els.studentExerciseTarget.textContent = Number(exercise.targetWeight || 0) > 0
+        ? `Peso objetivo ${Number(exercise.targetWeight || 0)} kg`
+        : 'Sin peso objetivo definido';
+    }
+    if (els.studentExerciseRest) {
+      els.studentExerciseRest.textContent = `Descanso ${Number(exercise.restSeconds || 0)} s`;
+    }
+    if (els.studentExerciseLast) {
+      els.studentExerciseLast.textContent = metrics.label;
+    }
+    if (els.studentLastWeight) {
+      els.studentLastWeight.textContent = metrics.lastWeight;
+    }
+    if (els.studentLastReps) {
+      els.studentLastReps.textContent = metrics.lastReps;
+    }
+    if (els.studentBestWeight) {
+      els.studentBestWeight.textContent = metrics.bestWeight;
+    }
+    if (els.studentTechniqueNote) {
+      els.studentTechniqueNote.textContent = exercise.coachNotes || 'Sin instrucción';
+    }
+
+    const nextSetNumber = studentUi.editingSetNumber || Math.min(sets.length + 1, Math.max(1, plannedSets));
+    if (els.studentWeightInput && !els.studentWeightInput.value) {
+      const fallbackWeight = Number(exercise.targetWeight || 0);
+      if (fallbackWeight > 0) {
+        els.studentWeightInput.value = String(fallbackWeight);
+      }
+    }
+    if (els.studentSetList) {
+      els.studentSetList.innerHTML = sets.length
+        ? sets.map((setEntry) => `
+          <div class="student-set-item">
+            <div>
+              <strong>Serie ${Number(setEntry.setNumber || 0)}</strong>
+              <div class="meta">${Number(setEntry.weight || 0)} kg × ${Number(setEntry.reps || 0)}</div>
+              <div class="meta">${setEntry.personalRecord ? '🏆 Posible nuevo récord' : ''}</div>
+            </div>
+            <button class="secondary small" type="button" data-student-set-edit="${Number(setEntry.setNumber || 0)}">Corregir</button>
+          </div>`).join('')
+        : '<div class="muted">Todavía no hay series registradas en este ejercicio.</div>';
+    }
+
+    if (els.studentExerciseCompletedNotice) {
+      const completed = plannedSets > 0 && doneSets >= plannedSets;
+      els.studentExerciseCompletedNotice.classList.toggle('hidden', !completed);
+      els.studentExerciseCompletedNotice.textContent = completed ? 'Ejercicio completado' : `Serie ${nextSetNumber} de ${Math.max(1, plannedSets)}`;
+    }
+
+    if (els.studentNextExerciseBtn) {
+      els.studentNextExerciseBtn.textContent = studentUi.exerciseIndex < exercises.length - 1 ? 'Siguiente ejercicio' : 'Completar sesión';
+    }
+
+    if (els.studentRestValue) {
+      const baseRest = Number(exercise.restSeconds || 0);
+      const displayRest = studentUi.restRunning || studentUi.restRemaining > 0 ? studentUi.restRemaining : baseRest;
+      els.studentRestValue.textContent = `${Math.max(0, displayRest)} s`;
+    }
+
+    if (els.studentSessionFinishPanel) {
+      const sessionDone = session.status === 'completed' || (sessionStats.totalExercises > 0 && sessionStats.completedExercises >= sessionStats.totalExercises);
+      els.studentSessionFinishPanel.classList.toggle('hidden', !sessionDone);
+      if (sessionDone && els.studentSessionSummary) {
+        els.studentSessionSummary.innerHTML = `
+          <div class="meta">Ejercicios completados: ${sessionStats.completedExercises}/${sessionStats.totalExercises}</div>
+          <div class="meta">Series realizadas: ${sessionStats.totalSets}</div>
+          <div class="meta">Récords potenciales: ${sessionStats.potentialRecords}</div>
+          <div class="meta">Duración estimada: ${sessionStats.estimatedDurationMinutes} min</div>`;
+      }
+    }
+  }
+
+  function getClientDisplayName(client) {
+    return client.full_name || client.name || 'Cliente sin nombre';
+  }
+
+  function getClientRenewalLabel(client) {
+    if (client.renewal_date) {
+      return formatClientDate(client.renewal_date);
+    }
+    if (client.renewal_day) {
+      return `Día ${client.renewal_day}`;
+    }
+    return 'Sin fecha';
+  }
+
+  function getClientStatusTone(client) {
+    if (client.client_status === 'inactive' || client.active === false) {
+      return 'muted';
+    }
+    if (client.payment_status === 'overdue') {
+      return 'bad';
+    }
+    if (client.payment_status === 'paid') {
+      return 'ok';
+    }
+    return 'warn';
+  }
+
+  function getClientStatusLabel(client) {
+    const labels = {
+      paid: 'Pagado',
+      pending: 'Pendiente',
+      overdue: 'Atrasado',
+      uncertain: 'En duda'
+    };
+    return labels[client.payment_status] || 'Pendiente';
+  }
+
+  function getClientPresenceLabel(client) {
+    const labels = {
+      active: 'Activo',
+      paused: 'Pausado',
+      uncertain: 'En duda',
+      inactive: 'Inactivo'
+    };
+    return labels[client.client_status] || 'Activo';
+  }
+
+  function getVisibleClients() {
+    const search = clientUi.search.trim().toLowerCase();
+    return (clientUi.records || []).filter((client) => {
+      const searchableText = `${getClientDisplayName(client)} ${client.phone || ''}`.toLowerCase();
+      const matchesSearch = !search || searchableText.includes(search);
+      if (!matchesSearch) {
+        return false;
+      }
+
+      if (clientUi.filter === 'all') {
+        return true;
+      }
+      if (clientUi.filter === 'active') {
+        return client.client_status === 'active';
+      }
+      if (clientUi.filter === 'inactive') {
+        return client.client_status === 'inactive';
+      }
+      if (clientUi.filter === 'uncertain') {
+        return client.client_status === 'uncertain' || client.payment_status === 'uncertain';
+      }
+      if (clientUi.filter === 'pending') {
+        return client.payment_status === 'pending' || client.payment_status === 'overdue';
+      }
+      return true;
+    });
+  }
+
+  function setClientNotice(message, tone = 'neutral') {
+    clientUi.notice = message;
+    clientUi.noticeTone = tone;
+    if (els.clientMessage) {
+      els.clientMessage.textContent = message;
+      els.clientMessage.classList.toggle('ok', tone === 'ok');
+      els.clientMessage.classList.toggle('bad', tone === 'bad');
+      els.clientMessage.classList.toggle('warn', tone === 'warn');
+      els.clientMessage.classList.toggle('muted', tone === 'neutral');
+    }
+  }
+
+  function clearClientForm() {
+    if (!els.clientForm) {
+      return;
+    }
+    els.clientForm.reset();
+    const defaults = {
+      clientService: 'Personalizado',
+      clientStatus: 'active',
+      clientPaymentStatus: 'pending'
+    };
+    Object.entries(defaults).forEach(([elementId, value]) => {
+      const element = document.getElementById(elementId);
+      if (element) {
+        element.value = value;
+      }
+    });
+    const clientIdInput = document.getElementById('clientId');
+    if (clientIdInput) {
+      clientIdInput.value = '';
+    }
+  }
+
+  function fillClientForm(client) {
+    if (!els.clientForm) {
+      return;
+    }
+    document.getElementById('clientId').value = client?.id || '';
+    document.getElementById('clientFullName').value = client?.full_name || client?.name || '';
+    document.getElementById('clientPhone').value = client?.phone || '';
+    document.getElementById('clientService').value = client?.service || 'Personalizado';
+    document.getElementById('clientMonthlyValue').value = Number(client?.monthly_value ?? client?.amount ?? 0) || 0;
+    document.getElementById('clientStatus').value = client?.client_status || 'active';
+    document.getElementById('clientPaymentStatus').value = client?.payment_status || 'pending';
+    document.getElementById('clientEmail').value = client?.email || '';
+    document.getElementById('clientBirthDate').value = client?.birth_date || '';
+    document.getElementById('clientTrainingDays').value = client?.training_days || '';
+    document.getElementById('clientSchedule').value = client?.schedule_notes || '';
+    document.getElementById('clientStartDate').value = client?.start_date || '';
+    document.getElementById('clientRenewalDate').value = client?.renewal_date || '';
+    document.getElementById('clientObjective').value = client?.objective || '';
+    document.getElementById('clientInjuries').value = client?.injuries || '';
+    document.getElementById('clientObservations').value = client?.observations || '';
+    document.getElementById('clientEmergencyContact').value = client?.emergency_contact || '';
+    document.getElementById('clientEmergencyPhone').value = client?.emergency_phone || '';
+  }
+
+  function toggleClientForm(open = true, client = null) {
+    clientUi.formOpen = open;
+    clientUi.editingId = client?.id || null;
+    if (els.clientFormPanel) {
+      els.clientFormPanel.classList.toggle('hidden', !open);
+    }
+    if (els.clientFormTitle) {
+      els.clientFormTitle.textContent = client ? 'Editar cliente' : 'Nuevo cliente';
+    }
+    if (client) {
+      fillClientForm(client);
+    } else {
+      clearClientForm();
+    }
+    if (open) {
+      setClientNotice(client ? `Editando ${getClientDisplayName(client)}.` : 'Completa el formulario para crear un cliente.', 'neutral');
+    }
+  }
+
+  function buildClientFormPayload() {
+    if (!els.clientForm) {
+      return null;
+    }
+    return Object.fromEntries(new FormData(els.clientForm).entries());
+  }
+
+  function validateClientPayload(payload, existingId = null) {
+    const errors = [];
+    const fullName = String(payload.fullName || '').trim();
+    const phone = String(payload.phone || '').trim();
+    const monthlyValue = Number(payload.monthlyValue);
+
+    if (!fullName) {
+      errors.push('El nombre no puede estar vacío');
+    }
+    if (!phone) {
+      errors.push('El teléfono es obligatorio');
+    }
+    if (!payload.service) {
+      errors.push('El servicio es obligatorio');
+    }
+    if (!Number.isFinite(monthlyValue) || monthlyValue < 0) {
+      errors.push('El valor mensual no puede ser negativo');
+    }
+
+    ['birthDate', 'startDate', 'renewalDate'].forEach((field) => {
+      if (!isValidDateInput(payload[field])) {
+        errors.push(`La fecha de ${field} no es válida`);
+      }
+    });
+
+    const phoneKey = normalizePhoneDigits(phone);
+    const nameKey = fullName.toLowerCase();
+    const duplicate = (clientUi.records || []).some((client) => {
+      if (existingId && client.id === existingId) {
+        return false;
+      }
+      return getClientDisplayName(client).trim().toLowerCase() === nameKey && normalizePhoneDigits(client.phone) === phoneKey;
+    });
+    if (duplicate) {
+      errors.push('Ya existe un cliente con ese nombre y teléfono');
+    }
+
+    return { valid: errors.length === 0, errors };
+  }
+
+  function buildClientRecord(payload, existingClient = null) {
+    const fullName = String(payload.fullName || '').trim();
+    const monthlyValue = Number(payload.monthlyValue || 0);
+    const renewalDate = payload.renewalDate || '';
+    const clientStatus = payload.clientStatus || 'active';
+    const paymentStatus = payload.paymentStatus || 'pending';
+    const clientId = existingClient?.id || (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : dataApi.createId('client'));
+
+    return normalizeClientRecord({
+      ...existingClient,
+      id: clientId,
+      full_name: fullName,
+      name: fullName,
+      phone: payload.phone || '',
+      email: payload.email || '',
+      birth_date: payload.birthDate || '',
+      training_days: payload.trainingDays || '',
+      service: payload.service || 'Personalizado',
+      monthly_value: monthlyValue,
+      amount: monthlyValue,
+      client_status: clientStatus,
+      payment_status: paymentStatus,
+      status: paymentStatus,
+      schedule_notes: payload.schedule || '',
+      objective: payload.objective || '',
+      injuries: payload.injuries || '',
+      observations: payload.observations || '',
+      emergency_contact: payload.emergencyContact || '',
+      emergency_phone: payload.emergencyPhone || '',
+      start_date: payload.startDate || '',
+      renewal_date: renewalDate,
+      renewal_day: renewalDate ? new Date(`${renewalDate}T00:00:00`).getDate() : (existingClient?.renewal_day || ''),
+      active: clientStatus !== 'inactive',
+      continues: clientStatus !== 'inactive',
+      createdAt: existingClient?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  function renderClientDetail(client) {
+    if (!els.clientDetail) {
+      return;
+    }
+
+    if (!client) {
+      els.clientDetail.innerHTML = '<div class="muted">Selecciona "Ver ficha" para revisar el detalle completo.</div>';
+      return;
+    }
+
+    els.clientDetail.innerHTML = `
+      <div class="client-detail-card">
+        <div class="client-card-head">
+          <div>
+            <h3>${escapeHtml(getClientDisplayName(client))}</h3>
+            <div class="meta">${escapeHtml(client.phone || 'Sin teléfono')}</div>
+          </div>
+          <span class="client-badge ${getClientStatusTone(client)}">${escapeHtml(getClientStatusLabel(client))}</span>
+        </div>
+        <div class="client-detail-grid">
+          <div><strong>Servicio</strong><div class="meta">${escapeHtml(client.service || 'Sin servicio')}</div></div>
+          <div><strong>Estado del cliente</strong><div class="meta">${escapeHtml(getClientPresenceLabel(client))}</div></div>
+          <div><strong>Valor mensual</strong><div class="meta">${financeApi.formatCurrency(Number(client.monthly_value ?? client.amount ?? 0))}</div></div>
+          <div><strong>Fecha de renovación</strong><div class="meta">${escapeHtml(getClientRenewalLabel(client))}</div></div>
+          <div><strong>Horario</strong><div class="meta">${escapeHtml(client.schedule_notes || 'Sin horario')}</div></div>
+          <div><strong>Días de entrenamiento</strong><div class="meta">${escapeHtml(client.training_days || 'Sin información')}</div></div>
+          <div><strong>Correo</strong><div class="meta">${escapeHtml(client.email || 'Sin correo')}</div></div>
+          <div><strong>Objetivo</strong><div class="meta">${escapeHtml(client.objective || 'Sin objetivo')}</div></div>
+          <div><strong>Contacto de emergencia</strong><div class="meta">${escapeHtml(client.emergency_contact || 'Sin contacto')}</div></div>
+          <div><strong>Teléfono de emergencia</strong><div class="meta">${escapeHtml(client.emergency_phone || 'Sin teléfono')}</div></div>
+          <div><strong>Lesiones</strong><div class="meta">${escapeHtml(client.injuries || 'Sin información')}</div></div>
+          <div><strong>Observaciones</strong><div class="meta">${escapeHtml(client.observations || 'Sin observaciones')}</div></div>
+          <div><strong>Fecha de inicio</strong><div class="meta">${escapeHtml(formatClientDate(client.start_date))}</div></div>
+        </div>
+        <div class="inline-actions">
+          ${client.client_status === 'active' && client.active !== false ? `<button class="primary" type="button" data-client-student-view="${client.id}">Vista alumno</button>` : '<span class="muted">Vista alumno disponible para clientes activos</span>'}
+        </div>
+      </div>`;
   }
 
   function renderAuthPanel() {
@@ -114,6 +1126,7 @@
           const response = await window.VALHALLA.auth.signIn(email, password);
           if (response.ok) {
             authMessage.textContent = 'Sesión lista para Supabase.';
+            refreshClients().catch(() => {});
           } else {
             authMessage.textContent = response.error || 'No se pudo iniciar sesión.';
           }
@@ -133,9 +1146,24 @@
     Object.entries(els.sections).forEach(([name, element]) => {
       element.classList.toggle('hidden', name !== section);
     });
+    if (els.nav) {
+      els.nav.classList.toggle('hidden', section === 'studentTraining');
+    }
     document.querySelectorAll('[data-nav]').forEach((button) => {
       button.classList.toggle('active', button.getAttribute('data-nav') === section);
     });
+    if (section === 'clients') {
+      refreshClients().catch(() => {});
+    }
+    if (section === 'register') {
+      ensureDateValue(document.getElementById('date'));
+    }
+    if (section === 'trainings') {
+      ensureDateValue(els.routineDate);
+    }
+    if (section === 'studentTraining') {
+      renderStudentTraining();
+    }
   }
 
   function renderDashboardCards() {
@@ -200,13 +1228,12 @@
       els.accountSelect.innerHTML = (state.accounts || []).filter((account) => account.isActive !== false).map((account) => `<option value="${account.id}" ${account.isMain ? 'selected' : ''}>${escapeHtml(account.name)}</option>`).join('');
     }
     if (els.quickCategories) {
-      els.quickCategories.innerHTML = (state.categories || []).map((category) => `<button class="chip" type="button" data-quick-category="${escapeHtml(category.name)}">${escapeHtml(category.name)}</button>`).join('');
+      els.quickCategories.innerHTML = (state.categories || [])
+        .filter((category) => !['Mariela', 'Magic'].includes(category.name))
+        .map((category) => `<button class="chip" type="button" data-quick-category="${escapeHtml(category.name)}">${escapeHtml(category.name)}</button>`).join('');
     }
 
-    const selectedDate = document.getElementById('date');
-    if (selectedDate && !selectedDate.value) {
-      selectedDate.value = new Date().toISOString().slice(0, 10);
-    }
+    ensureDateValue(document.getElementById('date'));
 
     let adviceText = '';
     if (dashboard.realAvailable < Number(state.profile.minimum_reserve || 0)) {
@@ -329,40 +1356,370 @@
   }
 
   function renderClients() {
-    els.clientList.innerHTML = state.clients.map((client) => {
-      const profile = getActiveNutritionProfile(client.id);
-      const plan = getSelectedPlan(profile);
-      const compliance = getNutritionCompliance(client.id, 7);
-      const cycleDay = profile ? getCycleDay(profile, new Date()) : '—';
-      const alertCount = getNutritionAlerts(client.id).length;
-      const nutritionBadge = profile ? '<span class="tag ok">Pauta activa</span>' : '<span class="tag muted">Sin pauta</span>';
+    if (!els.clientList) {
+      return;
+    }
+
+    const visibleClients = getVisibleClients();
+    const selectedClient = clientUi.detailId ? (visibleClients.find((client) => client.id === clientUi.detailId) || clientUi.records.find((client) => client.id === clientUi.detailId)) : visibleClients[0] || null;
+
+    if (els.clientCount) {
+      els.clientCount.textContent = `${visibleClients.length} cliente${visibleClients.length === 1 ? '' : 's'}`;
+    }
+    if (els.clientSearch && els.clientSearch.value !== clientUi.search) {
+      els.clientSearch.value = clientUi.search;
+    }
+    document.querySelectorAll('[data-client-filter]').forEach((button) => {
+      button.classList.toggle('active', button.getAttribute('data-client-filter') === clientUi.filter);
+    });
+    if (els.clientFormPanel) {
+      els.clientFormPanel.classList.toggle('hidden', !clientUi.formOpen);
+    }
+    if (els.clientFormTitle) {
+      els.clientFormTitle.textContent = clientUi.editingId ? 'Editar cliente' : 'Nuevo cliente';
+    }
+    if (els.clientSubmitBtn) {
+      els.clientSubmitBtn.textContent = clientUi.editingId ? 'Actualizar cliente' : 'Guardar cliente';
+      els.clientSubmitBtn.disabled = clientUi.saving;
+    }
+    if (els.clientNewBtn) {
+      els.clientNewBtn.disabled = clientUi.saving;
+    }
+
+    const emptyMessage = clientUi.loading
+      ? '<div class="muted">Cargando clientes...</div>'
+      : '<div class="muted">No hay clientes para mostrar.</div>';
+
+    els.clientList.innerHTML = visibleClients.length ? visibleClients.map((client) => {
+      const tone = getClientStatusTone(client);
+      const serviceLabel = escapeHtml(client.service || 'Sin servicio');
+      const scheduleLabel = escapeHtml(client.schedule_notes || 'Sin horario');
+      const whatsappPhone = normalizeChileanPhoneForWhatsApp(client.phone);
       return `
-        <div class="list-item nutrition-client-card">
-          <div>
-            <strong>${escapeHtml(client.name)}</strong>
-            <div class="meta">${escapeHtml(client.service)} · ${financeApi.formatCurrency(client.amount)} · día ${client.renewal_day} · ${escapeHtml(client.status)}</div>
-            <div class="meta">${nutritionBadge} · Día de ciclo ${cycleDay} · Cumplimiento 7 días: ${compliance}%</div>
-            ${plan ? `<div class="meta">Plan: ${escapeHtml(plan.name)}</div>` : ''}
+        <article class="client-card">
+          <div class="client-card-head">
+            <div>
+              <h3>${escapeHtml(getClientDisplayName(client))}</h3>
+              <div class="meta">${serviceLabel} · ${scheduleLabel}</div>
+            </div>
+            <span class="client-badge ${tone}">${escapeHtml(getClientStatusLabel(client))}</span>
           </div>
-          <div class="inline-actions">
-            <button class="ghost small" data-open-nutrition="${client.id}" type="button">Ver nutrición</button>
-            ${client.status !== 'paid' && client.continues ? `<button class="primary small" data-pay="${client.id}" type="button">Marcar pagado</button>` : '<span class="muted">Pagado</span>'}
+          <div class="client-card-body">
+            <div><strong>Valor mensual</strong><div class="meta">${financeApi.formatCurrency(Number(client.monthly_value ?? client.amount ?? 0))}</div></div>
+            <div><strong>Renovación</strong><div class="meta">${escapeHtml(getClientRenewalLabel(client))}</div></div>
+            <div><strong>Estado del cliente</strong><div class="meta">${escapeHtml(getClientPresenceLabel(client))}</div></div>
           </div>
-        </div>`;
-    }).join('');
+          <div class="inline-actions client-actions">
+            <button class="ghost small" type="button" data-client-view="${client.id}">Ver ficha</button>
+            <button class="secondary small" type="button" data-client-edit="${client.id}">Editar</button>
+            <button class="secondary small" type="button" data-client-whatsapp="${client.id}" ${whatsappPhone ? '' : 'disabled'}>WhatsApp</button>
+          </div>
+        </article>`;
+    }).join('') : emptyMessage;
+
+    renderClientDetail(selectedClient);
+    if (clientUi.notice && els.clientMessage) {
+      els.clientMessage.textContent = clientUi.notice;
+      els.clientMessage.classList.toggle('ok', clientUi.noticeTone === 'ok');
+      els.clientMessage.classList.toggle('bad', clientUi.noticeTone === 'bad');
+      els.clientMessage.classList.toggle('warn', clientUi.noticeTone === 'warn');
+      els.clientMessage.classList.toggle('muted', clientUi.noticeTone === 'neutral');
+    }
+  }
+
+  async function refreshClients() {
+    clientUi.loading = true;
+    clientUi.records = (state.clients || []).map((client) => normalizeClientRecord(client));
+    renderClients();
+
+    if (!isCloudMode() || !cloudDataApi || typeof cloudDataApi.listClients !== 'function') {
+      clientUi.loading = false;
+      renderClients();
+      return;
+    }
+
+    const response = await cloudDataApi.listClients();
+    if (response && response.error && response.error !== 'Modo local') {
+      setClientNotice(response.error, 'bad');
+    }
+
+    if (response && Array.isArray(response.data) && response.data.length) {
+      state.clients = response.data.map((client) => normalizeClientRecord(client));
+      clientUi.records = state.clients.slice();
+      persist();
+    }
+
+    if (response && !response.error) {
+      setClientNotice('', 'neutral');
+    }
+
+    clientUi.loading = false;
+    renderClients();
+  }
+
+  function openClientWhatsApp(client) {
+    const phone = normalizeChileanPhoneForWhatsApp(client.phone);
+    if (!phone) {
+      setClientNotice('El cliente no tiene un teléfono válido para WhatsApp.', 'warn');
+      return;
+    }
+    window.open(`https://wa.me/${phone}`, '_blank', 'noopener,noreferrer');
+  }
+
+  function getCloudClientPayload(client) {
+    return {
+      full_name: client.full_name,
+      email: client.email || null,
+      birth_date: client.birth_date || null,
+      phone: client.phone || null,
+      service: client.service || null,
+      schedule_notes: client.schedule_notes || null,
+      objective: client.objective || null,
+      injuries: client.injuries || null,
+      observations: client.observations || null,
+      emergency_contact: client.emergency_contact || null,
+      emergency_phone: client.emergency_phone || null,
+      start_date: client.start_date || null,
+      renewal_date: client.renewal_date || null,
+      monthly_value: Number(client.monthly_value ?? client.amount ?? 0),
+      payment_status: client.payment_status || 'pending',
+      client_status: client.client_status || 'active',
+      active: client.client_status !== 'inactive',
+      auth_user_id: null
+    };
+  }
+
+  async function handleClientSubmit(event) {
+    event.preventDefault();
+    if (clientUi.saving) {
+      return;
+    }
+
+    const payload = buildClientFormPayload();
+    const existingClient = clientUi.editingId ? (clientUi.records || []).find((client) => client.id === clientUi.editingId) || null : null;
+    const validation = validateClientPayload(payload, clientUi.editingId);
+    if (!validation.valid) {
+      setClientNotice(validation.errors.join('. '), 'bad');
+      return;
+    }
+
+    clientUi.saving = true;
+    if (els.clientSubmitBtn) {
+      els.clientSubmitBtn.disabled = true;
+    }
+    if (els.clientNewBtn) {
+      els.clientNewBtn.disabled = true;
+    }
+    setClientNotice('Guardando cliente...', 'neutral');
+
+    try {
+      const nextClient = buildClientRecord(payload, existingClient);
+      let savedClient = nextClient;
+
+      if (isCloudMode()) {
+        if (!cloudDataApi || typeof cloudDataApi.createClient !== 'function' || typeof cloudDataApi.updateClient !== 'function') {
+          throw new Error('La integración Cloud no está disponible');
+        }
+        const cloudPayload = getCloudClientPayload(nextClient);
+        const response = existingClient
+          ? await cloudDataApi.updateClient(existingClient.id, cloudPayload)
+          : await cloudDataApi.createClient(cloudPayload);
+
+        if (response.error) {
+          throw new Error(response.error.message || response.error || 'No se pudo guardar el cliente en Cloud');
+        }
+        savedClient = normalizeClientRecord(response.data || nextClient);
+      }
+
+      const normalizedSavedClient = normalizeClientRecord(savedClient);
+      const nextRecords = (clientUi.records || []).filter((client) => client.id !== normalizedSavedClient.id);
+      nextRecords.unshift(normalizedSavedClient);
+      clientUi.records = nextRecords;
+      state.clients = nextRecords.map((client) => normalizeClientRecord(client));
+      clientUi.detailId = normalizedSavedClient.id;
+      clientUi.formOpen = false;
+      clientUi.editingId = null;
+      clearClientForm();
+      if (els.clientFormPanel) {
+        els.clientFormPanel.classList.add('hidden');
+      }
+      setClientNotice(existingClient ? 'Cliente actualizado correctamente.' : 'Cliente guardado correctamente.', 'ok');
+      persist();
+      renderClients();
+    } catch (error) {
+      setClientNotice(error.message || 'No se pudo guardar el cliente.', 'bad');
+    } finally {
+      clientUi.saving = false;
+      if (els.clientSubmitBtn) {
+        els.clientSubmitBtn.disabled = false;
+      }
+      if (els.clientNewBtn) {
+        els.clientNewBtn.disabled = false;
+      }
+      renderClients();
+    }
+  }
+
+  function editClientById(clientId) {
+    const client = (clientUi.records || []).find((item) => item.id === clientId);
+    if (!client) {
+      setClientNotice('No se encontró el cliente para editar.', 'bad');
+      return;
+    }
+    toggleClientForm(true, client);
+    clientUi.detailId = client.id;
+    renderClients();
+  }
+
+  function selectClientDetail(clientId) {
+    const client = (clientUi.records || []).find((item) => item.id === clientId);
+    if (client) {
+      clientUi.detailId = client.id;
+      renderClients();
+    }
   }
 
   function renderTrainings() {
-    els.trainingsStudents.innerHTML = state.trainings.students.map((student) => `
-      <div class="student-card">
-        <strong>${escapeHtml(student.name)}</strong>
-        <div class="routine-list">
-          ${student.routines.length ? student.routines.map((routineId) => {
-            const routine = state.trainings.routines.find((item) => item.id === routineId);
-            return routine ? `<div class="routine-pill"><strong>${escapeHtml(routine.name)}</strong><div class="meta">${escapeHtml(routine.exercise)} · ${routine.sets}x${routine.reps} · ${routine.weight} kg · descanso ${escapeHtml(routine.rest)}</div></div>` : '';
-          }).join('') : '<div class="muted">Sin rutinas asignadas.</div>'}
-        </div>
-      </div>`).join('');
+    ensureTrainingsV08State();
+    const activeClients = getActiveTrainingClients();
+    const selectedClientId = trainingUi.selectedClientId && activeClients.some((client) => client.id === trainingUi.selectedClientId)
+      ? trainingUi.selectedClientId
+      : (activeClients[0]?.id || '');
+    trainingUi.selectedClientId = selectedClientId;
+
+    const activeSession = getCurrentTrainingSession();
+    if (!activeSession || activeSession.clientId !== selectedClientId) {
+      const candidate = sortSessionsByDateAsc(getTrainingSessionsByClient(selectedClientId)).slice(-1)[0] || null;
+      trainingUi.activeSessionId = candidate?.id || '';
+      trainingUi.activeExerciseId = candidate?.exercises?.[candidate.exercises.length - 1]?.id || '';
+      trainingUi.editingSetNumber = null;
+      if (els.editingSetNumber) {
+        els.editingSetNumber.value = '';
+      }
+    }
+
+    const clientOptions = activeClients.map((client) => `<option value="${client.id}" ${client.id === selectedClientId ? 'selected' : ''}>${escapeHtml(getClientDisplayName(client))}</option>`).join('');
+
+    if (els.studentId) {
+      els.studentId.innerHTML = clientOptions || '<option value="">Primero debes crear un cliente</option>';
+      els.studentId.disabled = !activeClients.length;
+    }
+    if (els.historyClientId) {
+      els.historyClientId.innerHTML = clientOptions || '<option value="">Primero debes crear un cliente</option>';
+      els.historyClientId.value = selectedClientId;
+      els.historyClientId.disabled = !activeClients.length;
+    }
+    if (els.trainingClientNotice) {
+      els.trainingClientNotice.textContent = activeClients.length ? '' : 'Primero debes crear un cliente';
+      els.trainingClientNotice.classList.toggle('hidden', Boolean(activeClients.length));
+    }
+
+    const knownExercises = getExerciseOptionsForClient(selectedClientId);
+    if (!trainingUi.selectedExercise && knownExercises.length && !els.historyExercise?.value) {
+      trainingUi.selectedExercise = knownExercises[0];
+    }
+
+    if (els.historyExercise) {
+      if (!els.historyExercise.value) {
+        els.historyExercise.value = trainingUi.selectedExercise || '';
+      }
+      trainingUi.selectedExercise = els.historyExercise.value || trainingUi.selectedExercise || '';
+    }
+
+    if (els.trainingProgressSummary) {
+      els.trainingProgressSummary.innerHTML = buildProgressSummary(selectedClientId, trainingUi.selectedExercise);
+    }
+
+    const currentSession = getCurrentTrainingSession();
+    const currentExercise = getCurrentTrainingExercise();
+    const currentSets = getExerciseSets(currentExercise);
+    const plannedSets = Number(currentExercise?.plannedSets || 1);
+    const nextSetNumber = trainingUi.editingSetNumber || Math.min(currentSets.length + 1, Math.max(plannedSets, 1));
+
+    if (els.currentExerciseTitle) {
+      els.currentExerciseTitle.textContent = currentExercise?.exerciseName || 'Serie activa';
+    }
+    if (els.setProgressLabel) {
+      els.setProgressLabel.textContent = `Serie ${nextSetNumber} de ${Math.max(plannedSets, 1)}`;
+    }
+    if (els.trainingLastRecord) {
+      const summary = buildLastSessionSummary(selectedClientId, currentExercise?.exerciseName || trainingUi.selectedExercise, {
+        ignoreSessionId: currentSession?.id || ''
+      });
+      els.trainingLastRecord.textContent = summary;
+    }
+
+    if (els.setEntryList) {
+      els.setEntryList.innerHTML = currentSets.length
+        ? currentSets.map((setEntry) => `
+            <div class="training-set-item">
+              <div>
+                <strong>Serie ${Number(setEntry.setNumber || 0)}</strong>
+                <div class="meta">${Number(setEntry.weight || 0)} kg × ${Number(setEntry.reps || 0)} · ${setEntry.completed !== false ? 'Completada' : 'No completada'}</div>
+                <div class="meta">${setEntry.personalRecord ? 'Posible nuevo récord' : ''}</div>
+              </div>
+              <button class="secondary small" type="button" data-set-edit="${Number(setEntry.setNumber || 0)}">Corregir</button>
+            </div>`).join('')
+        : '<div class="muted">Aún no hay series registradas para este ejercicio.</div>';
+    }
+
+    const sessionsByClient = activeClients.map((client) => {
+      const sessions = sortSessionsByDateAsc(getTrainingSessionsByClient(client.id));
+      const totalExercises = sessions.reduce((sum, session) => sum + getSessionExercises(session).length, 0);
+      const totalPlannedSets = sessions.reduce((sum, session) => sum + getSessionExercises(session).reduce((acc, exercise) => acc + Number(exercise.plannedSets || 0), 0), 0);
+      const totalCompletedSets = sessions.reduce((sum, session) => sum + getSessionExercises(session).reduce((acc, exercise) => acc + getExerciseSets(exercise).filter((setEntry) => setEntry.completed !== false).length, 0), 0);
+      const completionLabel = totalPlannedSets > 0 ? `${totalCompletedSets}/${totalPlannedSets}` : '0/0';
+
+      const byExerciseBest = new Map();
+      sessions.forEach((session) => {
+        getSessionExercises(session).forEach((exercise) => {
+          const currentBest = byExerciseBest.get(exercise.exerciseName) || 0;
+          const localBest = getExerciseSets(exercise).reduce((best, setEntry) => Math.max(best, Number(setEntry.weight || 0)), 0);
+          byExerciseBest.set(exercise.exerciseName, Math.max(currentBest, localBest));
+        });
+      });
+
+      const latestSession = sessions[sessions.length - 1] || null;
+      const latestExercise = latestSession ? getSessionExercises(latestSession)[getSessionExercises(latestSession).length - 1] : null;
+      const latestSet = latestExercise ? getExerciseSets(latestExercise)[getExerciseSets(latestExercise).length - 1] : null;
+
+      const exerciseLines = latestSession
+        ? getSessionExercises(latestSession).map((exercise) => {
+          const doneSets = getExerciseSets(exercise).filter((setEntry) => setEntry.completed !== false).length;
+          const lastSet = getExerciseSets(exercise)[getExerciseSets(exercise).length - 1] || null;
+          const bestWeight = byExerciseBest.get(exercise.exerciseName) || 0;
+          return `<div class="routine-pill"><strong>${escapeHtml(exercise.exerciseName)}</strong><div class="meta">Series ${doneSets}/${Number(exercise.plannedSets || 0)} · Último ${lastSet ? `${Number(lastSet.weight || 0)} kg` : 'Sin registro'} · Mejor ${bestWeight ? `${bestWeight} kg` : 'Sin registro'} · Descanso ${Number(exercise.restSeconds || 0)} s</div></div>`;
+        }).join('')
+        : '<div class="muted">Sin sesiones registradas.</div>';
+
+      return `
+        <div class="student-card training-summary-grid">
+          <strong>${escapeHtml(getClientDisplayName(client))}</strong>
+          <div class="meta">Ejercicios realizados: ${totalExercises}</div>
+          <div class="meta">Series completadas: ${completionLabel}</div>
+          <div class="meta">Último peso: ${latestSet ? `${Number(latestSet.weight || 0)} kg` : 'Sin registro'}</div>
+          <div class="meta">Planificación completada: ${totalPlannedSets > 0 && totalCompletedSets >= totalPlannedSets ? 'Sí' : 'No'}</div>
+          <div class="routine-list">${exerciseLines}</div>
+        </div>`;
+    }).join('');
+
+    els.trainingsStudents.innerHTML = sessionsByClient || '<div class="notice">Primero debes crear un cliente</div>';
+
+    ensureDateValue(els.routineDate);
+    if (els.restPreset && els.restInput && els.restPreset.value !== 'custom') {
+      els.restInput.value = els.restPreset.value;
+    }
+
+    if (els.setWeightInput && !els.setWeightInput.value && currentExercise) {
+      const fallbackWeight = Number(currentExercise.targetWeight || 0);
+      if (fallbackWeight > 0) {
+        els.setWeightInput.value = String(fallbackWeight);
+      }
+    }
+
+    if (els.saveSetBtn) {
+      els.saveSetBtn.disabled = !(currentSession && currentExercise);
+    }
   }
 
   function renderSettings() {
@@ -863,6 +2220,7 @@
     renderDashboard();
     renderClients();
     renderTrainings();
+    renderStudentTraining();
     renderSettings();
     renderNutrition();
   }
@@ -870,11 +2228,12 @@
   function handleMovementSubmit(event) {
     event.preventDefault();
     const payload = Object.fromEntries(new FormData(els.form));
+    const selectedDate = payload.date || getTodayLocalDate();
     const result = financeApi.addMovement(state, {
       type: payload.type,
       amount: Number(payload.amount || 0),
       category: payload.category || 'Otro',
-      date: payload.date || new Date().toISOString().slice(0, 10),
+      date: selectedDate,
       description: payload.description || payload.category || 'Movimiento',
       segment: payload.segment || 'personal',
       accountId: payload.accountId || (state.accounts.find((account) => account.isMain)?.id || '')
@@ -886,6 +2245,10 @@
     }
 
     els.form.reset();
+    const dateInput = document.getElementById('date');
+    if (dateInput) {
+      dateInput.value = selectedDate;
+    }
     els.formMessage.innerHTML = '<span class="ok">Movimiento guardado correctamente. Revisa el resumen y el historial.</span>';
     persist();
   }
@@ -907,19 +2270,182 @@
 
   function handleRoutineSubmit(event) {
     event.preventDefault();
+    ensureTrainingsV08State();
+    const activeClients = getActiveTrainingClients();
+    if (!activeClients.length) {
+      els.routineMessage.textContent = 'Primero debes crear un cliente';
+      return;
+    }
+
     const payload = Object.fromEntries(new FormData(els.routineForm));
-    financeApi.createRoutine(state, {
-      studentId: payload.studentId,
-      name: payload.name,
-      date: payload.date,
-      exercise: payload.exercise,
-      sets: payload.sets,
-      reps: payload.reps,
-      weight: payload.weight,
-      rest: payload.rest
-    });
-    els.routineForm.reset();
-    els.routineMessage.textContent = 'Rutina creada.';
+    const clientId = payload.clientId || payload.studentId || '';
+    if (!clientId) {
+      els.routineMessage.textContent = 'Selecciona un cliente activo.';
+      return;
+    }
+
+    const exerciseName = String(payload.exerciseName || payload.exercise || '').trim();
+    if (!exerciseName) {
+      els.routineMessage.textContent = 'Escribe el ejercicio.';
+      return;
+    }
+
+    const plannedSets = Math.max(1, Number(payload.plannedSets || payload.sets || 1));
+    const plannedRepMin = Math.max(1, Number(payload.plannedRepMin || payload.reps || 1));
+    const plannedRepMaxRaw = Number(payload.plannedRepMax || plannedRepMin);
+    const plannedRepMax = plannedRepMaxRaw >= plannedRepMin ? plannedRepMaxRaw : plannedRepMin;
+    const targetWeight = Math.max(0, Number(payload.targetWeight || payload.weight || 0));
+    const restSeconds = payload.restPreset === 'custom'
+      ? Math.max(1, parseInt(String(payload.restSeconds || payload.rest || '90').replace(/\D/g, ''), 10) || 90)
+      : Math.max(1, Number(payload.restPreset || 90));
+    const sessionDate = payload.date || getTodayLocalDate();
+    const sessionTitle = String(payload.title || payload.name || 'Sesión de entrenamiento').trim();
+    const sessionStatus = payload.status || 'in_progress';
+    const sessionNotes = String(payload.sessionNotes || '').trim();
+
+    const existingByIdentity = (state.trainingsV08.sessions || []).find((session) => (
+      session.clientId === clientId
+      && session.date === sessionDate
+      && String(session.title || '').trim().toLowerCase() === sessionTitle.toLowerCase()
+    )) || null;
+
+    let activeSession = existingByIdentity || getCurrentTrainingSession();
+    if (!activeSession || activeSession.clientId !== clientId) {
+      activeSession = null;
+    }
+
+    if (!activeSession) {
+      activeSession = {
+        id: dataApi.createId('tx-session'),
+        clientId,
+        planId: null,
+        groupSessionId: null,
+        date: sessionDate,
+        title: sessionTitle || 'Sesión de entrenamiento',
+        status: sessionStatus,
+        notes: sessionNotes,
+        exercises: []
+      };
+      state.trainingsV08.sessions.push(activeSession);
+      trainingUi.activeSessionId = activeSession.id;
+    } else {
+      activeSession.date = sessionDate;
+      activeSession.title = sessionTitle || activeSession.title;
+      activeSession.status = sessionStatus;
+      activeSession.notes = sessionNotes;
+    }
+
+    let exercise = getSessionExercises(activeSession).find((item) => String(item.exerciseName || '').trim().toLowerCase() === exerciseName.toLowerCase());
+    if (!exercise) {
+      exercise = {
+        id: dataApi.createId('tx-exercise'),
+        exerciseName,
+        order: getSessionExercises(activeSession).length + 1,
+        plannedSets,
+        plannedRepMin,
+        plannedRepMax,
+        targetWeight,
+        restSeconds,
+        coachNotes: String(payload.coachNotes || payload.techniqueNotes || '').trim(),
+        sets: []
+      };
+      activeSession.exercises.push(exercise);
+    } else {
+      exercise.plannedSets = plannedSets;
+      exercise.plannedRepMin = plannedRepMin;
+      exercise.plannedRepMax = plannedRepMax;
+      exercise.targetWeight = targetWeight;
+      exercise.restSeconds = restSeconds;
+      exercise.coachNotes = String(payload.coachNotes || payload.techniqueNotes || '').trim();
+    }
+
+    trainingUi.selectedClientId = clientId;
+    trainingUi.selectedExercise = exerciseName;
+    trainingUi.activeExerciseId = exercise.id;
+    trainingUi.editingSetNumber = null;
+    if (els.editingSetNumber) {
+      els.editingSetNumber.value = '';
+    }
+    if (els.setWeightInput) {
+      const previousSet = getExerciseSets(exercise)[getExerciseSets(exercise).length - 1] || null;
+      els.setWeightInput.value = String(previousSet ? Number(previousSet.weight || 0) : targetWeight || 0);
+    }
+    if (els.setRepsInput) {
+      els.setRepsInput.value = '';
+    }
+    if (els.historyClientId) {
+      els.historyClientId.value = clientId;
+    }
+    if (els.historyExercise) {
+      els.historyExercise.value = exerciseName;
+    }
+
+    els.routineMessage.textContent = 'Ejercicio preparado. Ahora registra serie por serie.';
+    persist();
+  }
+
+  function saveTrainingSetEntry() {
+    ensureTrainingsV08State();
+    const session = getCurrentTrainingSession();
+    const exercise = getCurrentTrainingExercise();
+    if (!session || !exercise) {
+      if (els.routineMessage) {
+        els.routineMessage.textContent = 'Primero prepara un ejercicio para la sesión.';
+      }
+      return;
+    }
+
+    const weight = Number(els.setWeightInput?.value || 0);
+    const reps = Number(els.setRepsInput?.value || 0);
+    const completed = els.setCompletedInput ? els.setCompletedInput.checked : true;
+    if (!Number.isFinite(weight) || weight < 0 || !Number.isFinite(reps) || reps < 0) {
+      if (els.setRecordNotice) {
+        els.setRecordNotice.textContent = 'Peso y repeticiones deben ser válidos.';
+      }
+      return;
+    }
+
+    const sets = getExerciseSets(exercise);
+    const requestedSetNumber = Number(els.editingSetNumber?.value || trainingUi.editingSetNumber || 0);
+    const nextSetNumber = requestedSetNumber || (sets.length + 1);
+    const previousBestWeight = getBestWeightForExercise(session.clientId, exercise.exerciseName, { ignoreSessionId: session.id });
+    const isPotentialPr = weight > previousBestWeight && weight > 0;
+
+    const existingSet = sets.find((setEntry) => Number(setEntry.setNumber || 0) === Number(nextSetNumber));
+    if (existingSet) {
+      existingSet.weight = weight;
+      existingSet.reps = reps;
+      existingSet.completed = completed;
+      existingSet.techniqueStatus = existingSet.techniqueStatus || 'pending';
+      existingSet.coachValidated = Boolean(existingSet.coachValidated);
+      existingSet.personalRecord = isPotentialPr;
+    } else {
+      sets.push({
+        setNumber: nextSetNumber,
+        weight,
+        reps,
+        completed,
+        createdAt: new Date().toISOString(),
+        techniqueStatus: 'pending',
+        coachValidated: false,
+        personalRecord: isPotentialPr
+      });
+    }
+
+    sets.sort((a, b) => Number(a.setNumber || 0) - Number(b.setNumber || 0));
+    trainingUi.editingSetNumber = null;
+    if (els.editingSetNumber) {
+      els.editingSetNumber.value = '';
+    }
+    if (els.setRepsInput) {
+      els.setRepsInput.value = '';
+    }
+    if (els.setRecordNotice) {
+      els.setRecordNotice.textContent = isPotentialPr ? 'Posible nuevo récord' : 'Serie guardada.';
+    }
+    if (els.routineMessage) {
+      els.routineMessage.textContent = 'Serie guardada correctamente.';
+    }
     persist();
   }
 
@@ -1178,6 +2704,166 @@
       return;
     }
 
+    const clientFilterButton = target.closest('[data-client-filter]');
+    if (clientFilterButton) {
+      clientUi.filter = clientFilterButton.getAttribute('data-client-filter') || 'all';
+      renderClients();
+      return;
+    }
+
+    const clientViewId = target.getAttribute('data-client-view');
+    if (clientViewId) {
+      selectClientDetail(clientViewId);
+      return;
+    }
+
+    const clientEditId = target.getAttribute('data-client-edit');
+    if (clientEditId) {
+      editClientById(clientEditId);
+      return;
+    }
+
+    const clientWhatsAppId = target.getAttribute('data-client-whatsapp');
+    if (clientWhatsAppId) {
+      const client = (clientUi.records || []).find((item) => item.id === clientWhatsAppId);
+      if (client) {
+        openClientWhatsApp(client);
+      }
+      return;
+    }
+
+    const clientStudentViewId = target.getAttribute('data-client-student-view');
+    if (clientStudentViewId) {
+      enterStudentMode(clientStudentViewId);
+      return;
+    }
+
+    if (target === els.clientNewBtn) {
+      toggleClientForm(true, null);
+      renderClients();
+      return;
+    }
+
+    if (target === els.clientCancelBtn) {
+      clientUi.formOpen = false;
+      clientUi.editingId = null;
+      clearClientForm();
+      if (els.clientFormPanel) {
+        els.clientFormPanel.classList.add('hidden');
+      }
+      setClientNotice('Formulario cerrado.', 'neutral');
+      renderClients();
+      return;
+    }
+
+    const setEditNumber = target.getAttribute('data-set-edit');
+    if (setEditNumber) {
+      const exercise = getCurrentTrainingExercise();
+      const setEntry = getExerciseSets(exercise).find((item) => Number(item.setNumber || 0) === Number(setEditNumber));
+      if (setEntry) {
+        trainingUi.editingSetNumber = Number(setEditNumber);
+        if (els.editingSetNumber) {
+          els.editingSetNumber.value = String(setEditNumber);
+        }
+        if (els.setWeightInput) {
+          els.setWeightInput.value = String(Number(setEntry.weight || 0));
+        }
+        if (els.setRepsInput) {
+          els.setRepsInput.value = String(Number(setEntry.reps || 0));
+        }
+        if (els.setCompletedInput) {
+          els.setCompletedInput.checked = setEntry.completed !== false;
+        }
+        if (els.setRecordNotice) {
+          els.setRecordNotice.textContent = `Editando serie ${setEditNumber}`;
+        }
+      }
+      return;
+    }
+
+    const weightDelta = target.getAttribute('data-weight-delta');
+    if (weightDelta && els.setWeightInput) {
+      const current = Number(els.setWeightInput.value || 0);
+      const next = Math.max(0, Math.round((current + Number(weightDelta)) * 10) / 10);
+      els.setWeightInput.value = String(next);
+      return;
+    }
+
+    const studentSetEditNumber = target.getAttribute('data-student-set-edit');
+    if (studentSetEditNumber) {
+      const exercise = getStudentExercise();
+      const setEntry = getExerciseSets(exercise).find((item) => Number(item.setNumber || 0) === Number(studentSetEditNumber));
+      if (setEntry) {
+        studentUi.editingSetNumber = Number(studentSetEditNumber);
+        if (els.studentEditingSetNumber) {
+          els.studentEditingSetNumber.value = String(studentSetEditNumber);
+        }
+        if (els.studentWeightInput) {
+          els.studentWeightInput.value = String(Number(setEntry.weight || 0));
+        }
+        if (els.studentRepsInput) {
+          els.studentRepsInput.value = String(Number(setEntry.reps || 0));
+        }
+        if (els.studentSetCompleted) {
+          els.studentSetCompleted.checked = setEntry.completed !== false;
+        }
+        if (els.studentSetNotice) {
+          els.studentSetNotice.textContent = `Editando serie ${studentSetEditNumber}`;
+        }
+      }
+      return;
+    }
+
+    const studentWeightDelta = target.getAttribute('data-student-weight-delta');
+    if (studentWeightDelta && els.studentWeightInput) {
+      const current = Number(els.studentWeightInput.value || 0);
+      const next = Math.max(0, Math.round((current + Number(studentWeightDelta)) * 10) / 10);
+      els.studentWeightInput.value = String(next);
+      return;
+    }
+
+    if (target === els.studentSaveSetBtn) {
+      saveStudentSetEntry();
+      return;
+    }
+
+    if (target === els.studentNextExerciseBtn) {
+      goToNextStudentExercise();
+      return;
+    }
+
+    if (target === els.studentRestStartBtn) {
+      startStudentRest();
+      return;
+    }
+
+    if (target === els.studentRestPlusBtn) {
+      const exercise = getStudentExercise();
+      if (!studentUi.restRunning && studentUi.restRemaining <= 0) {
+        studentUi.restRemaining = Number(exercise?.restSeconds || 0);
+      }
+      studentUi.restRemaining = Math.max(0, Number(studentUi.restRemaining || 0) + 15);
+      renderStudentTraining();
+      return;
+    }
+
+    if (target === els.studentRestSkipBtn) {
+      stopStudentRestTimer();
+      studentUi.restRemaining = 0;
+      renderStudentTraining();
+      return;
+    }
+
+    if (target === els.studentBackBtn) {
+      exitStudentMode();
+      return;
+    }
+
+    if (target === els.studentFinalizeBtn) {
+      finalizeStudentSession();
+      return;
+    }
+
     const editId = target.getAttribute('data-edit');
     if (editId) {
       const movement = state.movements.find((item) => item.id === editId);
@@ -1264,9 +2950,57 @@
   els.form.addEventListener('submit', handleMovementSubmit);
   els.cashForm.addEventListener('submit', handleInitialCashSubmit);
   els.routineForm.addEventListener('submit', handleRoutineSubmit);
+  els.clientForm?.addEventListener('submit', handleClientSubmit);
   document.getElementById('settingsForm').addEventListener('submit', handleSettingsSubmit);
   document.getElementById('exportBtn').addEventListener('click', exportData);
   els.fileInput.addEventListener('change', handleImport);
+  els.clientSearch?.addEventListener('input', (event) => {
+    clientUi.search = event.target.value || '';
+    renderClients();
+  });
+  els.restPreset?.addEventListener('change', (event) => {
+    const preset = event.target.value;
+    if (!els.restInput) {
+      return;
+    }
+    if (preset === 'custom') {
+      if (!els.restInput.value || ['60', '90', '95'].includes(String(els.restInput.value))) {
+        els.restInput.value = '';
+      }
+      els.restInput.focus();
+      return;
+    }
+    els.restInput.value = preset;
+  });
+  els.studentId?.addEventListener('change', (event) => {
+    trainingUi.selectedClientId = event.target.value || '';
+    trainingUi.activeSessionId = '';
+    trainingUi.activeExerciseId = '';
+    trainingUi.editingSetNumber = null;
+    if (els.historyClientId) {
+      els.historyClientId.value = trainingUi.selectedClientId;
+    }
+    renderTrainings();
+  });
+  els.historyClientId?.addEventListener('change', (event) => {
+    trainingUi.selectedClientId = event.target.value || '';
+    trainingUi.activeSessionId = '';
+    trainingUi.activeExerciseId = '';
+    trainingUi.editingSetNumber = null;
+    renderTrainings();
+  });
+  els.historyExercise?.addEventListener('input', (event) => {
+    trainingUi.selectedExercise = event.target.value || '';
+    renderTrainings();
+  });
+  document.getElementById('exercise')?.addEventListener('input', (event) => {
+    if (!els.historyExercise || els.historyExercise.value) {
+      return;
+    }
+    trainingUi.selectedExercise = event.target.value || '';
+    renderTrainings();
+  });
+  els.saveSetBtn?.addEventListener('click', saveTrainingSetEntry);
   document.addEventListener('input', (event) => {
     if (event.target.closest('#nutritionPlanForm')) {
       updatePlanDraftFromInputs(event);
@@ -1280,6 +3014,7 @@
 
   show('home');
   render();
+  refreshClients().catch(() => {});
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./service-worker.js').catch(() => {});

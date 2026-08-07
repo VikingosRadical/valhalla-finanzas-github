@@ -85,6 +85,11 @@
         { id: 'alumno-2', name: 'Camila', routines: [] }
       ],
       routines: []
+    },
+    trainingModelVersion: '0.8.0',
+    trainingsV08: {
+      plans: [],
+      sessions: []
     }
   };
 
@@ -158,11 +163,192 @@
 
   function createInitialState() {
     const state = JSON.parse(JSON.stringify(INITIAL_STATE));
+    state.clients = state.clients.map((client) => normalizeClient(client));
     state.nutritionProfiles = [];
     state.nutritionPlans = [createInitialNutritionPlan()];
     state.nutritionLogs = [];
     state.foodBlocks = createInitialFoodBlocks();
+    state.trainingModelVersion = '0.8.0';
+    state.trainingsV08 = {
+      plans: [],
+      sessions: []
+    };
     return state;
+  }
+
+  function slugifyTrainingPart(value) {
+    return String(value || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'base';
+  }
+
+  function normalizeTrainingSet(setEntry, index) {
+    return {
+      setNumber: Number(setEntry.setNumber || index + 1),
+      weight: Number(setEntry.weight || 0),
+      reps: Number(setEntry.reps || 0),
+      completed: setEntry.completed !== false,
+      createdAt: setEntry.createdAt || new Date().toISOString(),
+      techniqueStatus: setEntry.techniqueStatus || 'pending',
+      coachValidated: Boolean(setEntry.coachValidated),
+      personalRecord: Boolean(setEntry.personalRecord)
+    };
+  }
+
+  function normalizeTrainingExercise(exercise, index) {
+    const plannedSets = Number(exercise.plannedSets || exercise.sets || 1);
+    const plannedRepMin = Number(exercise.plannedRepMin || exercise.reps || 1);
+    const plannedRepMax = Number(exercise.plannedRepMax || exercise.reps || plannedRepMin);
+    return {
+      id: exercise.id || createId('tx-exercise'),
+      exerciseName: exercise.exerciseName || exercise.exercise || 'Ejercicio',
+      order: Number(exercise.order || index + 1),
+      plannedSets: plannedSets > 0 ? plannedSets : 1,
+      plannedRepMin: plannedRepMin > 0 ? plannedRepMin : 1,
+      plannedRepMax: plannedRepMax >= plannedRepMin ? plannedRepMax : plannedRepMin,
+      targetWeight: Number(exercise.targetWeight || exercise.weight || 0),
+      restSeconds: Number(exercise.restSeconds || 90),
+      coachNotes: exercise.coachNotes || exercise.techniqueNotes || '',
+      sets: Array.isArray(exercise.sets)
+        ? exercise.sets.map((setEntry, setIndex) => normalizeTrainingSet(setEntry, setIndex))
+        : []
+    };
+  }
+
+  function normalizeTrainingSession(session, index) {
+    const status = session.status || (session.sessionCompleted ? 'completed' : 'in_progress');
+    return {
+      id: session.id || createId('tx-session'),
+      clientId: session.clientId || session.studentId || '',
+      planId: session.planId || null,
+      groupSessionId: session.groupSessionId || null,
+      date: session.date || '',
+      title: session.title || session.name || `Sesión ${index + 1}`,
+      status,
+      notes: session.notes || '',
+      exercises: Array.isArray(session.exercises)
+        ? session.exercises.map((exercise, exerciseIndex) => normalizeTrainingExercise(exercise, exerciseIndex))
+        : []
+    };
+  }
+
+  function mergeTrainingSessionsById(existingItems, incomingItems) {
+    const map = new Map();
+    [...(existingItems || []), ...(incomingItems || [])].forEach((item, index) => {
+      const normalized = normalizeTrainingSession(item, index);
+      if (!normalized.id) {
+        return;
+      }
+      map.set(normalized.id, normalized);
+    });
+    return Array.from(map.values());
+  }
+
+  function migrateLegacyRoutinesToV08(routines) {
+    if (!Array.isArray(routines) || !routines.length) {
+      return [];
+    }
+
+    const sessionsMap = new Map();
+    routines.forEach((routine, index) => {
+      const clientId = routine.clientId || routine.studentId || '';
+      if (!clientId) {
+        return;
+      }
+
+      const date = routine.date || '';
+      const title = routine.name || 'Sesión migrada';
+      const sessionKey = `${slugifyTrainingPart(clientId)}-${slugifyTrainingPart(date)}-${slugifyTrainingPart(title)}`;
+      const sessionId = `legacy-session-${sessionKey}`;
+      if (!sessionsMap.has(sessionId)) {
+        sessionsMap.set(sessionId, {
+          id: sessionId,
+          clientId,
+          planId: null,
+          groupSessionId: null,
+          date,
+          title,
+          status: routine.sessionCompleted ? 'completed' : 'in_progress',
+          notes: '',
+          exercises: []
+        });
+      }
+
+      const session = sessionsMap.get(sessionId);
+      const exerciseId = routine.id ? `legacy-exercise-${routine.id}` : `legacy-exercise-${index + 1}`;
+      const exercise = {
+        id: exerciseId,
+        exerciseName: routine.exercise || 'Ejercicio migrado',
+        order: session.exercises.length + 1,
+        plannedSets: Number(routine.sets || 1),
+        plannedRepMin: Number(routine.reps || 1),
+        plannedRepMax: Number(routine.reps || 1),
+        targetWeight: Number(routine.weight || 0),
+        restSeconds: Number(routine.restSeconds || parseInt(String(routine.rest || '').replace(/\D/g, ''), 10) || 90),
+        coachNotes: routine.techniqueNotes || '',
+        sets: []
+      };
+
+      if (routine.performedWeight || routine.performedReps) {
+        exercise.sets.push(normalizeTrainingSet({
+          setNumber: 1,
+          weight: Number(routine.performedWeight || routine.weight || 0),
+          reps: Number(routine.performedReps || routine.reps || 0),
+          completed: routine.sessionCompleted !== false,
+          createdAt: routine.created_at || new Date().toISOString(),
+          techniqueStatus: 'pending',
+          coachValidated: false,
+          personalRecord: false
+        }, 0));
+      }
+
+      session.exercises.push(exercise);
+    });
+
+    return Array.from(sessionsMap.values()).map((session, index) => normalizeTrainingSession(session, index));
+  }
+
+  function normalizeClient(client) {
+    const fullName = client.full_name || client.name || '';
+    const phone = client.phone || client.phone_number || '';
+    const service = client.service || 'Personalizado';
+    const monthlyValue = Number(client.monthly_value ?? client.amount ?? 0);
+    const paymentStatus = client.payment_status || (client.status === 'paid' ? 'paid' : client.status === 'uncertain' ? 'uncertain' : client.status === 'overdue' ? 'overdue' : 'pending');
+    const clientStatus = client.client_status || (client.status === 'uncertain' ? 'uncertain' : client.continues === false ? 'inactive' : 'active');
+    const renewalDate = client.renewal_date || '';
+    const renewalDayFromDate = renewalDate ? new Date(renewalDate) : null;
+    const renewalDay = client.renewal_day || (renewalDayFromDate && !Number.isNaN(renewalDayFromDate.getTime()) ? renewalDayFromDate.getDate() : '');
+    const normalized = {
+      ...client,
+      id: client.id || createId('client'),
+      full_name: fullName,
+      name: fullName,
+      phone,
+      email: client.email || '',
+      birth_date: client.birth_date || '',
+      training_days: client.training_days || '',
+      service,
+      monthly_value: monthlyValue,
+      amount: Number(client.amount ?? monthlyValue),
+      schedule_notes: client.schedule_notes || client.schedule || '',
+      objective: client.objective || '',
+      injuries: client.injuries || '',
+      observations: client.observations || '',
+      emergency_contact: client.emergency_contact || '',
+      emergency_phone: client.emergency_phone || '',
+      start_date: client.start_date || '',
+      renewal_date: renewalDate,
+      renewal_day: renewalDay,
+      payment_status: paymentStatus,
+      client_status: clientStatus,
+      status: paymentStatus,
+      active: client.active !== false,
+      continues: client.continues !== undefined ? client.continues : clientStatus !== 'inactive'
+    };
+    return normalized;
   }
 
   function normalizeNutritionProfile(profile) {
@@ -313,6 +499,9 @@
 
   function mergeWithDefaults(parsed) {
     const base = createInitialState();
+    const legacyMigratedSessions = migrateLegacyRoutinesToV08(parsed.trainings?.routines || []);
+    const parsedSessions = Array.isArray(parsed.trainingsV08?.sessions) ? parsed.trainingsV08.sessions : [];
+    const mergedSessions = mergeTrainingSessionsById(parsedSessions, legacyMigratedSessions);
     const recurringSource = Array.isArray(parsed.recurringTransactions) && parsed.recurringTransactions.length
       ? parsed.recurringTransactions
       : (Array.isArray(parsed.recurring) ? parsed.recurring : base.recurring);
@@ -325,13 +514,24 @@
       categories: mergeArrayById(base.categories, parsed.categories, (item) => ({ id: item.id || createId('category'), name: item.name || 'Categoría', group: item.group || 'personal' })),
       recurring: mergeArrayById(base.recurring, recurringSource, (item) => item),
       recurringTransactions: mergeArrayById(base.recurringTransactions, recurringSource, (item) => item),
-      clients: mergeArrayById(base.clients, parsed.clients, (item) => item),
+      clients: mergeArrayById(base.clients, parsed.clients, normalizeClient),
       movements: mergeArrayById(base.movements, parsed.movements, (item) => item),
       financialGoals: mergeArrayById(base.financialGoals, parsed.financialGoals, normalizeFinancialGoal),
       debts: mergeArrayById(base.debts, parsed.debts, normalizeDebt),
       trainings: {
         students: mergeArrayById(base.trainings.students, parsed.trainings?.students, (item) => item),
         routines: mergeArrayById(base.trainings.routines, parsed.trainings?.routines, (item) => item)
+      },
+      trainingModelVersion: parsed.trainingModelVersion || '0.8.0',
+      trainingsV08: {
+        plans: normalizeArray(parsed.trainingsV08?.plans, base.trainingsV08.plans, (plan) => ({
+          id: plan.id || createId('tx-plan'),
+          clientId: plan.clientId || '',
+          name: plan.name || 'Plan de entrenamiento',
+          active: plan.active !== false,
+          notes: plan.notes || ''
+        })),
+        sessions: mergedSessions
       },
       nutritionProfiles: normalizeArray(parsed.nutritionProfiles, base.nutritionProfiles, normalizeNutritionProfile),
       nutritionPlans: normalizeArray(parsed.nutritionPlans, base.nutritionPlans, normalizeNutritionPlan),
@@ -377,6 +577,7 @@
     saveState,
     exportState,
     importState,
-    createId
+    createId,
+    normalizeClient
   };
 })();

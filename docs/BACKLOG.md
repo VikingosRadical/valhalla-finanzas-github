@@ -57,3 +57,4 @@ Priorizar las tareas necesarias para construir una base sólida, modular y escal
 - Dashboard con saldo total, saldo operativo, deuda pendiente y resumen financiero.
 - Respaldo mejorado con soporte para cuentas, movimientos, transacciones recurrentes, metas y deudas.
 - Preparación inicial de Supabase para autenticación, finanzas y clientes/pagos.
+- VALHALLA v0.7 — creación, búsqueda, filtro y listado de clientes con modo local y cloud.

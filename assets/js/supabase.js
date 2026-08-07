@@ -12,22 +12,20 @@
   }
 
   function saveData(data) {
+    if (window.VALHALLA && window.VALHALLA.data && typeof window.VALHALLA.data.saveState === 'function') {
+      window.VALHALLA.data.saveState(data);
+    }
+
     if (!isCloudEnabled()) {
-      if (window.VALHALLA && window.VALHALLA.data && typeof window.VALHALLA.data.saveState === 'function') {
-        window.VALHALLA.data.saveState(data);
-      }
       return { ok: true, mode: 'local', message: 'Guardado en localStorage' };
     }
 
-    return { ok: true, mode: 'cloud', message: 'Supabase listo para guardar cuando se complete la integración' };
+    return { ok: true, mode: 'cloud', message: 'Guardado en localStorage mientras se sincroniza con Supabase' };
   }
 
   function loadData() {
-    if (!isCloudEnabled()) {
-      if (window.VALHALLA && window.VALHALLA.data && typeof window.VALHALLA.data.loadState === 'function') {
-        return window.VALHALLA.data.loadState();
-      }
-      return null;
+    if (window.VALHALLA && window.VALHALLA.data && typeof window.VALHALLA.data.loadState === 'function') {
+      return window.VALHALLA.data.loadState();
     }
 
     return null;

@@ -61,3 +61,53 @@
 - Se corrigió la legibilidad de selects, inputs y opciones en el flujo de registro.
 - Se mejoró el contraste de etiquetas, botones y valores financieros para PC y móvil.
 - Se actualizó el service worker para refrescar estilos e imágenes en dispositivos móviles.
+
+## VALHALLA v0.7 — Creación y listado de clientes - 2026-08-06
+
+### Nuevas capacidades
+
+- Se incorporó un formulario de clientes con nombre, teléfono, servicio, valor mensual, estado, pago y datos opcionales.
+- Se añadió búsqueda, filtros y tarjetas de clientes con vista de ficha, edición y acceso directo a WhatsApp.
+- Se preparó el guardado en modo local con prevención de duplicados y bloqueo de doble envío.
+- Se conectó el modo Cloud para usar `public.clients` con `owner_id` desde la sesión autenticada.
+- Se actualizó el cache del service worker para incluir los archivos modificados y la nueva experiencia de clientes.
+
+## VALHALLA v0.7.1 — Estabilización, clientes reales y progresión básica - 2026-08-06
+
+### Nuevas capacidades
+
+- Se estabilizó el módulo de entrenamientos para usar clientes activos reales como alumnos.
+- Se añadieron campos de ejecución real de sesión: peso, repeticiones, completada y observación técnica.
+- Se incorporó un resumen de progresión por cliente y ejercicio con último registro y mejor peso histórico.
+- Se retiraron de accesos rápidos visibles las categorías Mariela y Magic sin eliminar datos históricos.
+- Se ocultó la pestaña Nutrición de la navegación principal sin eliminar su código ni su información.
+- Se ajustó el logo de cabecera con tamaño mayor y fallback visible en caso de error de carga.
+
+## VALHALLA v0.8 — Entrenamiento Real Fase 1 - 2026-08-07
+
+### Nuevas capacidades
+
+- Se creó un modelo local versionado para entrenamientos reales (`trainingModelVersion: 0.8.0`) con estructura cliente -> sesión -> ejercicio -> series.
+- Se añadió migración segura desde el modelo legacy (`trainings.routines`) hacia `trainingsV08.sessions` sin borrar datos anteriores.
+- El identificador oficial para entrenamientos pasa a `clientId`, manteniendo compatibilidad con estados previos.
+- Se implementó registro serie por serie con corrección de series ya registradas.
+- Se añadió vista de último registro por ejercicio antes de iniciar una nueva serie.
+- Se incorporaron botones rápidos de ajuste de peso (`-5`, `-2,5`, `+2,5`, `+5`) manteniendo edición manual.
+- Se normalizó el descanso por ejercicio en segundos (`60`, `90`, `95` o personalizado).
+- Se agregó resumen del entrenador por cliente con ejercicios realizados, series completadas, último peso y mejor peso.
+- Se añadió detección local de posible nuevo récord (`personalRecord`) y campo preparado de validación (`coachValidated`).
+- Se mejoró la experiencia móvil del flujo de entrenamientos para ejecución rápida entre descansos.
+
+## VALHALLA v0.8 — Entrenamiento Real Fase 2 — Vista Alumno - 2026-08-07
+
+### Nuevas capacidades
+
+- Se creó un modo alumno local de prueba accesible desde la ficha de clientes activos.
+- Se añadió una pantalla móvil de sesión del día con progreso por ejercicio y avance total de sesión.
+- Se incorporó tarjeta de ejercicio con planificación, descanso, historial y mejor marca histórica.
+- Se habilitó registro serie por serie con inputs grandes, botones rápidos de peso y corrección de series.
+- Se añadió avance operativo por ejercicio con opción de pasar al siguiente sin forzar completitud total.
+- Se incorporó mensaje motivador para `🏆 Posible nuevo récord` y botón futuro `Validar por entrenador`.
+- Se añadió cierre de sesión con resumen de ejercicios completados, series y récords potenciales.
+- Se implementó descanso manual con cuenta regresiva local, `+15 s`, `Saltar` y aviso por vibración/sonido cuando es posible.
+- Se reforzó privacidad visual en vista alumno ocultando datos financieros y administrativos sensibles.

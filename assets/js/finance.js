@@ -211,6 +211,7 @@
     }
     const previous = client.status;
     client.status = client.status === 'paid' ? 'pending' : 'paid';
+    client.payment_status = client.status;
     if (client.status === 'paid' && previous !== 'paid') {
       addMovement(state, {
         type: 'income',
@@ -230,13 +231,18 @@
     const routine = {
       id: payload.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
       studentId: payload.studentId,
+      clientId: payload.clientId || payload.studentId,
       name: payload.name,
       date: payload.date,
       exercise: payload.exercise,
-      sets: payload.sets,
-      reps: payload.reps,
-      weight: payload.weight,
+      sets: Number(payload.sets || 0),
+      reps: Number(payload.reps || 0),
+      weight: Number(payload.weight || 0),
       rest: payload.rest,
+      performedWeight: payload.performedWeight !== undefined && payload.performedWeight !== '' ? Number(payload.performedWeight) : null,
+      performedReps: payload.performedReps !== undefined && payload.performedReps !== '' ? Number(payload.performedReps) : null,
+      techniqueNotes: payload.techniqueNotes || '',
+      sessionCompleted: Boolean(payload.sessionCompleted),
       created_at: new Date().toISOString()
     };
 

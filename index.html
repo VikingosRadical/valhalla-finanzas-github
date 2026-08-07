@@ -24,7 +24,7 @@
       <div class="header-actions">
         <span class="user-pill">Usuario</span>
         <span class="badge" id="cloudModeBadge">Modo Local</span>
-        <span class="badge">v0.6.1</span>
+        <span class="badge">v0.7.1</span>
       </div>
     </header>
 
@@ -157,29 +157,175 @@
 
     <section id="clients" class="hidden">
       <div class="card">
-        <h2>Clientes</h2>
+        <div class="section-title client-section-head">
+          <div>
+            <p class="eyebrow">Clientes</p>
+            <h2>Clientes</h2>
+          </div>
+          <button class="primary client-new-button" id="newClientBtn" type="button">Nuevo cliente</button>
+        </div>
         <div id="authPanel" class="notice"></div>
-        <div id="clientList"></div>
+        <div class="client-toolbar">
+          <div class="client-search-wrap">
+            <label for="clientSearch">Buscador por nombre o teléfono</label>
+            <input id="clientSearch" type="search" placeholder="Buscar cliente">
+          </div>
+          <div class="client-filter-group" role="tablist" aria-label="Filtros de clientes">
+            <button class="secondary active" type="button" data-client-filter="all">Todos</button>
+            <button class="secondary" type="button" data-client-filter="active">Activos</button>
+            <button class="secondary" type="button" data-client-filter="pending">Pendientes</button>
+            <button class="secondary" type="button" data-client-filter="uncertain">En duda</button>
+            <button class="secondary" type="button" data-client-filter="inactive">Inactivos</button>
+          </div>
+        </div>
+        <div id="clientMessage" class="notice"></div>
+      </div>
+
+      <div class="card hidden" id="clientFormPanel">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">Formulario</p>
+            <h2 id="clientFormTitle">Nuevo cliente</h2>
+          </div>
+          <button class="secondary" id="clientCancelBtn" type="button">Cerrar</button>
+        </div>
+        <form id="clientForm" class="form-grid">
+          <input type="hidden" id="clientId" name="clientId">
+          <div class="row">
+            <div>
+              <label for="clientFullName">Nombre completo</label>
+              <input id="clientFullName" name="fullName" type="text" required>
+            </div>
+            <div>
+              <label for="clientPhone">Teléfono</label>
+              <input id="clientPhone" name="phone" type="tel" required>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="clientService">Servicio</label>
+              <select id="clientService" name="service" required>
+                <option value="Personalizado">Personalizado</option>
+                <option value="Semi personalizado">Semi personalizado</option>
+                <option value="Clase">Clase</option>
+                <option value="Otro">Otro</option>
+              </select>
+            </div>
+            <div>
+              <label for="clientMonthlyValue">Valor mensual</label>
+              <input id="clientMonthlyValue" name="monthlyValue" type="number" min="0" step="1" required>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="clientStatus">Estado del cliente</label>
+              <select id="clientStatus" name="clientStatus" required>
+                <option value="active">Activo</option>
+                <option value="paused">Pausado</option>
+                <option value="uncertain">En duda</option>
+                <option value="inactive">Inactivo</option>
+              </select>
+            </div>
+            <div>
+              <label for="clientPaymentStatus">Estado de pago</label>
+              <select id="clientPaymentStatus" name="paymentStatus" required>
+                <option value="paid">Pagado</option>
+                <option value="pending">Pendiente</option>
+                <option value="overdue">Atrasado</option>
+                <option value="uncertain">En duda</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="clientEmail">Correo</label>
+              <input id="clientEmail" name="email" type="email">
+            </div>
+            <div>
+              <label for="clientBirthDate">Fecha de nacimiento</label>
+              <input id="clientBirthDate" name="birthDate" type="date">
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="clientTrainingDays">Días de entrenamiento</label>
+              <input id="clientTrainingDays" name="trainingDays" type="text" placeholder="Lun, Mié y Vie">
+            </div>
+            <div>
+              <label for="clientSchedule">Horario</label>
+              <input id="clientSchedule" name="schedule" type="text" placeholder="19:00 - 20:00">
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="clientStartDate">Fecha de inicio</label>
+              <input id="clientStartDate" name="startDate" type="date">
+            </div>
+            <div>
+              <label for="clientRenewalDate">Fecha de renovación</label>
+              <input id="clientRenewalDate" name="renewalDate" type="date">
+            </div>
+          </div>
+          <div>
+            <label for="clientObjective">Objetivo</label>
+            <input id="clientObjective" name="objective" type="text">
+          </div>
+          <div>
+            <label for="clientInjuries">Lesiones</label>
+            <input id="clientInjuries" name="injuries" type="text">
+          </div>
+          <div>
+            <label for="clientObservations">Observaciones</label>
+            <textarea id="clientObservations" name="observations"></textarea>
+          </div>
+          <div class="row">
+            <div>
+              <label for="clientEmergencyContact">Contacto de emergencia</label>
+              <input id="clientEmergencyContact" name="emergencyContact" type="text">
+            </div>
+            <div>
+              <label for="clientEmergencyPhone">Teléfono de emergencia</label>
+              <input id="clientEmergencyPhone" name="emergencyPhone" type="tel">
+            </div>
+          </div>
+          <div class="client-form-actions">
+            <button class="primary" id="clientSubmitBtn" type="submit">Guardar cliente</button>
+          </div>
+          <div id="clientFormMessage" class="notice"></div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="section-title">
+          <h2>Listado</h2>
+          <span class="pill" id="clientCount">0 clientes</span>
+        </div>
+        <div id="clientList" class="client-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">
+          <h2>Ficha del cliente</h2>
+        </div>
+        <div id="clientDetail" class="client-detail"></div>
       </div>
     </section>
 
     <section id="trainings" class="hidden">
       <div class="card">
         <div class="section-title">
-          <h2>Entrenamientos</h2>
+          <h2>Entrenamiento real v0.8</h2>
         </div>
         <form id="routineForm" class="form-grid">
           <div class="row">
             <div>
               <label for="studentId">Alumno</label>
-              <select id="studentId" name="studentId">
-                <option value="alumno-1">Martín</option>
-                <option value="alumno-2">Camila</option>
-              </select>
+              <select id="studentId" name="clientId"></select>
+              <div id="trainingClientNotice" class="notice"></div>
             </div>
             <div>
-              <label for="routineName">Nombre de rutina</label>
-              <input id="routineName" name="name" placeholder="Rutina fuerza A" required>
+              <label for="routineName">Título de sesión</label>
+              <input id="routineName" name="title" placeholder="Sesión Fuerza Tren Inferior" required>
             </div>
           </div>
           <div class="row">
@@ -188,37 +334,184 @@
               <input id="routineDate" name="date" type="date" required>
             </div>
             <div>
+              <label for="sessionStatus">Estado de sesión</label>
+              <select id="sessionStatus" name="status">
+                <option value="planned">Planificada</option>
+                <option value="in_progress" selected>En progreso</option>
+                <option value="completed">Completada</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label for="sessionNotes">Notas de sesión</label>
+            <textarea id="sessionNotes" name="sessionNotes" placeholder="Objetivo general, foco técnico, observaciones del día"></textarea>
+          </div>
+          <div class="row">
+            <div>
               <label for="exercise">Ejercicio</label>
-              <input id="exercise" name="exercise" placeholder="Sentadilla" required>
+              <input id="exercise" name="exerciseName" placeholder="Sentadilla Smith" required>
+            </div>
+            <div>
+              <label for="techniqueNotes">Notas del entrenador para este ejercicio</label>
+              <input id="techniqueNotes" name="coachNotes" placeholder="Controlar profundidad y ritmo">
             </div>
           </div>
           <div class="row">
             <div>
-              <label for="sets">Series</label>
-              <input id="sets" name="sets" type="number" min="1" required>
+              <label for="sets">Series planificadas</label>
+              <input id="sets" name="plannedSets" type="number" min="1" required>
             </div>
             <div>
-              <label for="reps">Repeticiones</label>
-              <input id="reps" name="reps" type="number" min="1" required>
+              <label for="plannedRepMin">Rango de repeticiones</label>
+              <div class="row training-rep-range">
+                <input id="plannedRepMin" name="plannedRepMin" type="number" min="1" placeholder="Mín" required>
+                <input id="plannedRepMax" name="plannedRepMax" type="number" min="1" placeholder="Máx" required>
+              </div>
             </div>
           </div>
           <div class="row">
             <div>
               <label for="weight">Peso objetivo</label>
-              <input id="weight" name="weight" type="number" min="0" required>
+              <input id="weight" name="targetWeight" type="number" min="0" step="0.1" required>
             </div>
             <div>
-              <label for="rest">Descanso</label>
-              <input id="rest" name="rest" placeholder="90 sec" required>
+              <label for="restPreset">Descanso rápido</label>
+              <select id="restPreset" name="restPreset">
+                <option value="60">60 segundos</option>
+                <option value="90" selected>90 segundos</option>
+                <option value="95">95 segundos</option>
+                <option value="custom">Personalizado</option>
+              </select>
             </div>
           </div>
-          <button class="primary" type="submit">Guardar rutina</button>
+          <div>
+            <label for="rest">Descanso (segundos)</label>
+            <input id="rest" name="restSeconds" placeholder="90" required>
+          </div>
+          <button class="primary" type="submit">Preparar ejercicio</button>
           <div id="routineMessage" class="notice"></div>
         </form>
       </div>
+
+      <div class="card training-live-card">
+        <div class="section-title">
+          <h2 id="currentExerciseTitle">Serie activa</h2>
+          <span class="pill" id="setProgressLabel">Serie 1 de 1</span>
+        </div>
+        <div id="trainingLastRecord" class="notice">Sin registro anterior</div>
+        <div class="row training-live-row">
+          <div>
+            <label for="setWeightInput">Peso (kg)</label>
+            <input id="setWeightInput" type="number" min="0" step="0.1" inputmode="decimal">
+            <div class="chips training-weight-chips">
+              <button class="chip" type="button" data-weight-delta="-5">-5</button>
+              <button class="chip" type="button" data-weight-delta="-2.5">-2,5</button>
+              <button class="chip" type="button" data-weight-delta="2.5">+2,5</button>
+              <button class="chip" type="button" data-weight-delta="5">+5</button>
+            </div>
+          </div>
+          <div>
+            <label for="setRepsInput">Repeticiones</label>
+            <input id="setRepsInput" type="number" min="0" step="1" inputmode="numeric">
+            <label class="muted"><input id="setCompletedInput" type="checkbox" checked> Serie completada</label>
+            <input id="editingSetNumber" type="hidden" value="">
+          </div>
+        </div>
+        <button class="primary" id="saveSetBtn" type="button">Guardar serie</button>
+        <div id="setRecordNotice" class="notice"></div>
+        <div id="setEntryList" class="training-set-list"></div>
+      </div>
+
       <div class="card">
-        <h2>Alumnos</h2>
+        <h2>Historial y progresión</h2>
+        <div class="row">
+          <div>
+            <label for="historyClientId">Cliente</label>
+            <select id="historyClientId"></select>
+          </div>
+          <div>
+            <label for="historyExercise">Ejercicio</label>
+            <input id="historyExercise" type="text" placeholder="Ej: Sentadilla">
+          </div>
+        </div>
+        <div id="trainingProgressSummary" class="notice"></div>
+      </div>
+      <div class="card">
+        <h2>Resumen del entrenador</h2>
         <div id="trainingsStudents"></div>
+      </div>
+    </section>
+
+    <section id="studentTraining" class="hidden">
+      <div class="card student-mode-header">
+        <div class="section-title">
+          <h2>Vista alumno</h2>
+          <button class="secondary" id="studentBackBtn" type="button">Volver a entrenador</button>
+        </div>
+        <div class="student-mode-meta">
+          <div><strong id="studentName">Alumno</strong></div>
+          <div class="meta"><span id="studentSessionTitle">Sesión</span> · <span id="studentSessionDate">Fecha</span></div>
+          <div class="meta" id="studentExerciseProgress">Ejercicio 1 de 1</div>
+          <div class="progress-bar"><span id="studentSessionProgressBar" style="width:0%"></span></div>
+          <div class="meta" id="studentSessionProgressText">0% completado</div>
+        </div>
+      </div>
+
+      <div class="card student-exercise-card">
+        <h3 id="studentExerciseName">Ejercicio</h3>
+        <div class="meta" id="studentExercisePlan">Series y repeticiones</div>
+        <div class="meta" id="studentExerciseTarget">Peso objetivo</div>
+        <div class="meta" id="studentExerciseRest">Descanso</div>
+        <div class="notice" id="studentExerciseLast">Primera vez con este ejercicio</div>
+        <div class="training-progress-grid">
+          <div><strong>Último peso</strong><div class="meta" id="studentLastWeight">Sin registro</div></div>
+          <div><strong>Últimas repeticiones</strong><div class="meta" id="studentLastReps">Sin registro</div></div>
+          <div><strong>Mejor peso histórico</strong><div class="meta" id="studentBestWeight">Sin registro</div></div>
+          <div><strong>Instrucción técnica</strong><div class="meta" id="studentTechniqueNote">Sin instrucción</div></div>
+        </div>
+      </div>
+
+      <div class="card student-set-card">
+        <div class="row training-live-row">
+          <div>
+            <label for="studentWeightInput">Peso</label>
+            <input id="studentWeightInput" type="number" min="0" step="0.1" inputmode="decimal">
+            <div class="chips training-weight-chips">
+              <button class="chip" type="button" data-student-weight-delta="-5">-5</button>
+              <button class="chip" type="button" data-student-weight-delta="-2.5">-2,5</button>
+              <button class="chip" type="button" data-student-weight-delta="2.5">+2,5</button>
+              <button class="chip" type="button" data-student-weight-delta="5">+5</button>
+            </div>
+          </div>
+          <div>
+            <label for="studentRepsInput">Repeticiones</label>
+            <input id="studentRepsInput" type="number" min="0" step="1" inputmode="numeric">
+            <label class="muted"><input id="studentSetCompleted" type="checkbox" checked> Serie completada</label>
+            <input id="studentEditingSetNumber" type="hidden" value="">
+          </div>
+        </div>
+        <button class="primary" id="studentSaveSetBtn" type="button">Guardar serie</button>
+        <div id="studentSetNotice" class="notice"></div>
+        <div id="studentExerciseCompletedNotice" class="notice hidden">Ejercicio completado</div>
+        <button class="secondary" id="studentNextExerciseBtn" type="button">Siguiente ejercicio</button>
+        <button class="ghost" id="studentValidateRecordBtn" type="button" disabled>Validar por entrenador</button>
+        <div id="studentSetList" class="training-set-list"></div>
+      </div>
+
+      <div class="card student-rest-card">
+        <h3>Descanso</h3>
+        <div class="meta" id="studentRestValue">90 s</div>
+        <div class="inline-actions">
+          <button class="primary" id="studentRestStartBtn" type="button">Iniciar descanso</button>
+          <button class="secondary" id="studentRestPlusBtn" type="button">+15 s</button>
+          <button class="secondary" id="studentRestSkipBtn" type="button">Saltar</button>
+        </div>
+      </div>
+
+      <div class="card hidden" id="studentSessionFinishPanel">
+        <h3>Sesión completada</h3>
+        <div id="studentSessionSummary"></div>
+        <button class="primary" id="studentFinalizeBtn" type="button">Finalizar entrenamiento</button>
       </div>
     </section>
 
@@ -280,7 +573,6 @@
       <button type="button" data-nav="register">Registrar</button>
       <button type="button" data-nav="clients">Clientes</button>
       <button type="button" data-nav="trainings">Entrenamientos</button>
-      <button type="button" data-nav="nutrition">Nutrición</button>
       <button type="button" data-nav="settings">Ajustes</button>
     </div>
   </nav>
