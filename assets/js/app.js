@@ -1991,7 +1991,6 @@
         : '<div class="muted">Crea o selecciona una sesión para planificar ejercicios.</div>';
     }
 
-    const currentSession = getCurrentTrainingSession();
     const currentExercise = getCurrentTrainingExercise();
     if (currentExercise) {
       trainingUi.selectedExercise = currentExercise.exerciseName;
