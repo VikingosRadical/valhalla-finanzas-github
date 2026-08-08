@@ -90,7 +90,10 @@
     trainingsV08: {
       plans: [],
       sessions: []
-    }
+    },
+    sportsProfiles: [],
+    sportsConsiderations: [],
+    movementStatuses: []
   };
 
   const STORAGE_KEY = 'valhalla_v07';
@@ -173,7 +176,51 @@
       plans: [],
       sessions: []
     };
+    state.sportsProfiles = [];
+    state.sportsConsiderations = [];
+    state.movementStatuses = [];
     return state;
+  }
+
+  function normalizeSportsProfile(profile) {
+    return {
+      id: profile.id || createId('sports-profile'),
+      clientId: profile.clientId || profile.client_id || '',
+      primaryGoal: profile.primaryGoal || profile.primary_goal || 'otro',
+      secondaryGoal: profile.secondaryGoal || profile.secondary_goal || '',
+      goalNotes: profile.goalNotes || profile.goal_notes || '',
+      experienceLevel: profile.experienceLevel || profile.experience_level || 'principiante',
+      experienceMonths: Math.max(0, Number(profile.experienceMonths ?? profile.experience_months ?? 0)),
+      coachStartDate: profile.coachStartDate || profile.coach_start_date || '',
+      sessionsPerWeek: Math.max(0, Number(profile.sessionsPerWeek ?? profile.sessions_per_week ?? 3)),
+      sessionDurationMinutes: Math.max(0, Number(profile.sessionDurationMinutes ?? profile.session_duration_minutes ?? 60)),
+      coachNotes: profile.coachNotes || profile.coach_notes || ''
+    };
+  }
+
+  function normalizeSportsConsideration(item) {
+    return {
+      id: item.id || createId('sports-consideration'),
+      clientId: item.clientId || item.client_id || '',
+      title: item.title || '',
+      description: item.description || '',
+      status: item.status || 'activa',
+      notedOn: item.notedOn || item.noted_on || new Date().toISOString().slice(0, 10),
+      reviewDate: item.reviewDate || item.review_date || ''
+    };
+  }
+
+  function normalizeMovementStatus(item) {
+    return {
+      id: item.id || createId('movement-status'),
+      clientId: item.clientId || item.client_id || '',
+      movementName: item.movementName || item.movement_name || '',
+      movementKey: item.movementKey || item.movement_key || '',
+      status: item.status || 'no_evaluado',
+      coachNote: item.coachNote || item.coach_note || '',
+      evaluated1rm: item.evaluated1rm ?? item.evaluated_1rm ?? '',
+      lastEvaluatedOn: item.lastEvaluatedOn || item.last_evaluated_on || ''
+    };
   }
 
   function slugifyTrainingPart(value) {
@@ -533,6 +580,9 @@
         })),
         sessions: mergedSessions
       },
+      sportsProfiles: normalizeArray(parsed.sportsProfiles, base.sportsProfiles, normalizeSportsProfile),
+      sportsConsiderations: normalizeArray(parsed.sportsConsiderations, base.sportsConsiderations, normalizeSportsConsideration),
+      movementStatuses: normalizeArray(parsed.movementStatuses, base.movementStatuses, normalizeMovementStatus),
       nutritionProfiles: normalizeArray(parsed.nutritionProfiles, base.nutritionProfiles, normalizeNutritionProfile),
       nutritionPlans: normalizeArray(parsed.nutritionPlans, base.nutritionPlans, normalizeNutritionPlan),
       nutritionLogs: normalizeArray(parsed.nutritionLogs, base.nutritionLogs, normalizeNutritionLog),
@@ -578,6 +628,9 @@
     exportState,
     importState,
     createId,
-    normalizeClient
+    normalizeClient,
+    normalizeSportsProfile,
+    normalizeSportsConsideration,
+    normalizeMovementStatus
   };
 })();

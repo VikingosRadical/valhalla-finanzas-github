@@ -248,6 +248,202 @@
     return { data: null, error };
   }
 
+  async function listSportsProfiles() {
+    if (!isAvailable()) {
+      return { data: [], error: 'Modo local' };
+    }
+    const ownerContext = await getOwnerContext();
+    if (ownerContext.error) {
+      return { data: [], error: ownerContext.error };
+    }
+    const client = getSupabaseClient();
+    if (!client) {
+      return { data: [], error: 'Supabase SDK no disponible' };
+    }
+    const { data, error } = await client
+      .from('client_sports_profiles')
+      .select('*')
+      .eq('owner_id', ownerContext.ownerId)
+      .order('updated_at', { ascending: false });
+    return { data: Array.isArray(data) ? data : [], error };
+  }
+
+  async function upsertSportsProfile(profilePayload) {
+    if (!isAvailable()) {
+      return { data: null, error: 'Modo local' };
+    }
+    const ownerContext = await getOwnerContext();
+    if (ownerContext.error) {
+      return { data: null, error: ownerContext.error };
+    }
+    const client = getSupabaseClient();
+    if (!client) {
+      return { data: null, error: 'Supabase SDK no disponible' };
+    }
+    const payload = {
+      id: profilePayload?.id || undefined,
+      owner_id: ownerContext.ownerId,
+      client_id: profilePayload?.client_id,
+      primary_goal: profilePayload?.primary_goal || 'otro',
+      secondary_goal: profilePayload?.secondary_goal || null,
+      goal_notes: profilePayload?.goal_notes || null,
+      experience_level: profilePayload?.experience_level || 'principiante',
+      experience_months: Number(profilePayload?.experience_months || 0),
+      coach_start_date: profilePayload?.coach_start_date || null,
+      sessions_per_week: Number(profilePayload?.sessions_per_week || 0),
+      session_duration_minutes: Number(profilePayload?.session_duration_minutes || 0),
+      coach_notes: profilePayload?.coach_notes || null
+    };
+    const { data, error } = await client
+      .from('client_sports_profiles')
+      .upsert(payload, { onConflict: 'client_id' })
+      .select()
+      .single();
+    return { data, error };
+  }
+
+  async function listSportsConsiderations() {
+    if (!isAvailable()) {
+      return { data: [], error: 'Modo local' };
+    }
+    const ownerContext = await getOwnerContext();
+    if (ownerContext.error) {
+      return { data: [], error: ownerContext.error };
+    }
+    const client = getSupabaseClient();
+    if (!client) {
+      return { data: [], error: 'Supabase SDK no disponible' };
+    }
+    const { data, error } = await client
+      .from('client_sports_considerations')
+      .select('*')
+      .eq('owner_id', ownerContext.ownerId)
+      .order('noted_on', { ascending: false })
+      .order('created_at', { ascending: false });
+    return { data: Array.isArray(data) ? data : [], error };
+  }
+
+  async function upsertSportsConsideration(itemPayload) {
+    if (!isAvailable()) {
+      return { data: null, error: 'Modo local' };
+    }
+    const ownerContext = await getOwnerContext();
+    if (ownerContext.error) {
+      return { data: null, error: ownerContext.error };
+    }
+    const client = getSupabaseClient();
+    if (!client) {
+      return { data: null, error: 'Supabase SDK no disponible' };
+    }
+    const payload = {
+      id: itemPayload?.id || undefined,
+      owner_id: ownerContext.ownerId,
+      client_id: itemPayload?.client_id,
+      title: itemPayload?.title || 'Consideración',
+      description: itemPayload?.description || null,
+      status: itemPayload?.status || 'activa',
+      noted_on: itemPayload?.noted_on || new Date().toISOString().slice(0, 10),
+      review_date: itemPayload?.review_date || null
+    };
+    const { data, error } = await client
+      .from('client_sports_considerations')
+      .upsert(payload, { onConflict: 'id' })
+      .select()
+      .single();
+    return { data, error };
+  }
+
+  async function deleteSportsConsideration(id) {
+    if (!isAvailable()) {
+      return { data: null, error: 'Modo local' };
+    }
+    const ownerContext = await getOwnerContext();
+    if (ownerContext.error) {
+      return { data: null, error: ownerContext.error };
+    }
+    const client = getSupabaseClient();
+    if (!client) {
+      return { data: null, error: 'Supabase SDK no disponible' };
+    }
+    const { error } = await client
+      .from('client_sports_considerations')
+      .delete()
+      .eq('id', id)
+      .eq('owner_id', ownerContext.ownerId);
+    return { data: null, error };
+  }
+
+  async function listMovementStatuses() {
+    if (!isAvailable()) {
+      return { data: [], error: 'Modo local' };
+    }
+    const ownerContext = await getOwnerContext();
+    if (ownerContext.error) {
+      return { data: [], error: ownerContext.error };
+    }
+    const client = getSupabaseClient();
+    if (!client) {
+      return { data: [], error: 'Supabase SDK no disponible' };
+    }
+    const { data, error } = await client
+      .from('client_movement_statuses')
+      .select('*')
+      .eq('owner_id', ownerContext.ownerId)
+      .order('movement_name', { ascending: true });
+    return { data: Array.isArray(data) ? data : [], error };
+  }
+
+  async function upsertMovementStatus(itemPayload) {
+    if (!isAvailable()) {
+      return { data: null, error: 'Modo local' };
+    }
+    const ownerContext = await getOwnerContext();
+    if (ownerContext.error) {
+      return { data: null, error: ownerContext.error };
+    }
+    const client = getSupabaseClient();
+    if (!client) {
+      return { data: null, error: 'Supabase SDK no disponible' };
+    }
+    const payload = {
+      id: itemPayload?.id || undefined,
+      owner_id: ownerContext.ownerId,
+      client_id: itemPayload?.client_id,
+      movement_name: itemPayload?.movement_name || 'Movimiento',
+      movement_key: itemPayload?.movement_key || 'movimiento',
+      status: itemPayload?.status || 'no_evaluado',
+      coach_note: itemPayload?.coach_note || null,
+      evaluated_1rm: itemPayload?.evaluated_1rm === '' || itemPayload?.evaluated_1rm === null || itemPayload?.evaluated_1rm === undefined ? null : Number(itemPayload?.evaluated_1rm),
+      last_evaluated_on: itemPayload?.last_evaluated_on || null
+    };
+    const { data, error } = await client
+      .from('client_movement_statuses')
+      .upsert(payload, { onConflict: 'client_id,movement_key' })
+      .select()
+      .single();
+    return { data, error };
+  }
+
+  async function deleteMovementStatus(id) {
+    if (!isAvailable()) {
+      return { data: null, error: 'Modo local' };
+    }
+    const ownerContext = await getOwnerContext();
+    if (ownerContext.error) {
+      return { data: null, error: ownerContext.error };
+    }
+    const client = getSupabaseClient();
+    if (!client) {
+      return { data: null, error: 'Supabase SDK no disponible' };
+    }
+    const { error } = await client
+      .from('client_movement_statuses')
+      .delete()
+      .eq('id', id)
+      .eq('owner_id', ownerContext.ownerId);
+    return { data: null, error };
+  }
+
   async function listTrainingSessions() {
     if (!isAvailable()) {
       return { data: [], error: 'Modo local' };
@@ -589,6 +785,14 @@
     createClient,
     updateClient,
     markClientPaid,
+    listSportsProfiles,
+    upsertSportsProfile,
+    listSportsConsiderations,
+    upsertSportsConsideration,
+    deleteSportsConsideration,
+    listMovementStatuses,
+    upsertMovementStatus,
+    deleteMovementStatus,
     listTrainingPlans,
     upsertTrainingPlan,
     deleteTrainingPlan,

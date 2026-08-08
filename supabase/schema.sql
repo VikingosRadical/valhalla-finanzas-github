@@ -316,6 +316,65 @@ create or replace trigger trg_training_sets_updated_at
 before update on public.training_sets
 for each row execute function public.set_updated_at();
 
+-- Ficha deportiva v1
+create table if not exists public.client_sports_profiles (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  client_id uuid not null references public.clients(id) on delete cascade,
+  primary_goal text not null check (primary_goal in ('ganancia_muscular', 'perdida_grasa', 'fuerza', 'acondicionamiento', 'salud_general', 'rendimiento', 'otro')) default 'otro',
+  secondary_goal text check (secondary_goal in ('ganancia_muscular', 'perdida_grasa', 'fuerza', 'acondicionamiento', 'salud_general', 'rendimiento', 'otro')),
+  goal_notes text,
+  experience_level text not null check (experience_level in ('principiante', 'intermedio', 'avanzado')) default 'principiante',
+  experience_months integer not null default 0 check (experience_months >= 0),
+  coach_start_date date,
+  sessions_per_week integer not null default 3 check (sessions_per_week >= 0 and sessions_per_week <= 14),
+  session_duration_minutes integer not null default 60 check (session_duration_minutes >= 0 and session_duration_minutes <= 300),
+  coach_notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (client_id)
+);
+
+create or replace trigger trg_client_sports_profiles_updated_at
+before update on public.client_sports_profiles
+for each row execute function public.set_updated_at();
+
+create table if not exists public.client_sports_considerations (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  client_id uuid not null references public.clients(id) on delete cascade,
+  title text not null,
+  description text,
+  status text not null check (status in ('activa', 'en_observacion', 'resuelta')) default 'activa',
+  noted_on date not null default current_date,
+  review_date date,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create or replace trigger trg_client_sports_considerations_updated_at
+before update on public.client_sports_considerations
+for each row execute function public.set_updated_at();
+
+create table if not exists public.client_movement_statuses (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  client_id uuid not null references public.clients(id) on delete cascade,
+  movement_name text not null,
+  movement_key text not null,
+  status text not null check (status in ('dominado', 'tolerado', 'en_aprendizaje', 'no_evaluado', 'adaptar', 'restringido')) default 'no_evaluado',
+  coach_note text,
+  evaluated_1rm numeric,
+  last_evaluated_on date,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (client_id, movement_key)
+);
+
+create or replace trigger trg_client_movement_statuses_updated_at
+before update on public.client_movement_statuses
+for each row execute function public.set_updated_at();
+
 -- Índices recomendados para crecimiento sostenido
 create index if not exists idx_profiles_role_active on public.profiles (role, active);
 create index if not exists idx_accounts_owner_active on public.accounts (owner_id, active, operational);
@@ -338,6 +397,9 @@ create index if not exists idx_training_sessions_owner_client_date on public.tra
 create index if not exists idx_training_exercises_session_order on public.training_exercises (session_id, exercise_order);
 create index if not exists idx_training_sets_exercise_set on public.training_sets (exercise_id, set_number);
 create index if not exists idx_training_sets_client_created on public.training_sets (client_id, created_at desc);
+create index if not exists idx_client_sports_profiles_owner_client on public.client_sports_profiles (owner_id, client_id);
+create index if not exists idx_client_sports_considerations_client_status on public.client_sports_considerations (client_id, status, noted_on desc);
+create index if not exists idx_client_movement_statuses_client_key on public.client_movement_statuses (client_id, movement_key);
 
 -- Habilitar RLS
 alter table public.profiles enable row level security;
@@ -354,6 +416,9 @@ alter table public.training_plans enable row level security;
 alter table public.training_sessions enable row level security;
 alter table public.training_exercises enable row level security;
 alter table public.training_sets enable row level security;
+alter table public.client_sports_profiles enable row level security;
+alter table public.client_sports_considerations enable row level security;
+alter table public.client_movement_statuses enable row level security;
 
 -- Políticas base
 -- Admin: puede gestionar sus propios registros.
@@ -437,6 +502,24 @@ with check (public.current_user_role() = 'admin' and owner_id = auth.uid());
 
 drop policy if exists training_sets_admin_policy on public.training_sets;
 create policy training_sets_admin_policy on public.training_sets
+for all
+using (public.current_user_role() = 'admin' and owner_id = auth.uid())
+with check (public.current_user_role() = 'admin' and owner_id = auth.uid());
+
+drop policy if exists client_sports_profiles_admin_policy on public.client_sports_profiles;
+create policy client_sports_profiles_admin_policy on public.client_sports_profiles
+for all
+using (public.current_user_role() = 'admin' and owner_id = auth.uid())
+with check (public.current_user_role() = 'admin' and owner_id = auth.uid());
+
+drop policy if exists client_sports_considerations_admin_policy on public.client_sports_considerations;
+create policy client_sports_considerations_admin_policy on public.client_sports_considerations
+for all
+using (public.current_user_role() = 'admin' and owner_id = auth.uid())
+with check (public.current_user_role() = 'admin' and owner_id = auth.uid());
+
+drop policy if exists client_movement_statuses_admin_policy on public.client_movement_statuses;
+create policy client_movement_statuses_admin_policy on public.client_movement_statuses
 for all
 using (public.current_user_role() = 'admin' and owner_id = auth.uid())
 with check (public.current_user_role() = 'admin' and owner_id = auth.uid());

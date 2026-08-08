@@ -162,6 +162,21 @@
 - Se usa la tabla existente `training_plans` para persistir plantillas en Cloud sin cambios de esquema.
 - Se mantiene fallback local con la misma experiencia funcional cuando no hay sesión Cloud.
 
+## VALHALLA v0.8 — Sprint Ficha Deportiva v1 - 2026-08-08
+
+### Nuevas capacidades
+
+- Se añadió una Ficha Deportiva por cliente con objetivo principal/secundario, nivel, meses de experiencia, inicio con el coach, frecuencia semanal y duración habitual.
+- Se incorporó registro de consideraciones del coach con estado (`activa`, `en_observacion`, `resuelta`) y fechas de revisión.
+- Se añadió estado por movimiento/ejercicio (`DOMINADO`, `TOLERADO`, `EN_APRENDIZAJE`, `NO_EVALUADO`, `ADAPTAR`, `RESTRINGIDO`) con nota del coach y 1RM evaluado opcional.
+- Se agregaron marcas derivadas del historial existente de entrenamientos para mostrar `Mejor carga registrada` sin duplicar `training_sets`.
+
+### Cloud y seguridad
+
+- Se agregaron tablas nuevas multi-tenant para ficha deportiva con `owner_id` y `client_id`.
+- Se mantienen políticas admin ligadas a `owner_id = auth.uid()` y `public.current_user_role() = 'admin'`.
+- No se modificó la arquitectura de sesiones, series, plantillas ni autenticación.
+
 ### Seguridad
 
 - Se preparó el esquema SQL con RLS para que admin gestione sus propios datos por `owner_id`.

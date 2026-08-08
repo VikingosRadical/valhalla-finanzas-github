@@ -95,6 +95,7 @@
     clientCancelBtn: document.getElementById('clientCancelBtn'),
     clientSubmitBtn: document.getElementById('clientSubmitBtn'),
     clientCount: document.getElementById('clientCount'),
+    sportsProfilePanel: document.getElementById('sportsProfilePanel'),
     trainingsStudents: document.getElementById('trainingsStudents'),
     routineForm: document.getElementById('routineForm'),
     routineMessage: document.getElementById('routineMessage'),
@@ -297,6 +298,320 @@
       return withoutZero ? `56${withoutZero}` : '';
     }
     return digits;
+  }
+
+  const SPORTS_GOAL_OPTIONS = ['ganancia_muscular', 'perdida_grasa', 'fuerza', 'acondicionamiento', 'salud_general', 'rendimiento', 'otro'];
+  const EXPERIENCE_LEVEL_OPTIONS = ['principiante', 'intermedio', 'avanzado'];
+  const CONSIDERATION_STATUS_OPTIONS = ['activa', 'en_observacion', 'resuelta'];
+  const MOVEMENT_STATUS_OPTIONS = ['dominado', 'tolerado', 'en_aprendizaje', 'no_evaluado', 'adaptar', 'restringido'];
+
+  function ensureSportsState() {
+    if (!Array.isArray(state.sportsProfiles)) {
+      state.sportsProfiles = [];
+    }
+    if (!Array.isArray(state.sportsConsiderations)) {
+      state.sportsConsiderations = [];
+    }
+    if (!Array.isArray(state.movementStatuses)) {
+      state.movementStatuses = [];
+    }
+  }
+
+  function getSportsProfile(clientId) {
+    ensureSportsState();
+    return state.sportsProfiles.find((item) => item.clientId === clientId) || null;
+  }
+
+  function getSportsConsiderations(clientId) {
+    ensureSportsState();
+    return state.sportsConsiderations
+      .filter((item) => item.clientId === clientId)
+      .sort((a, b) => String(b.notedOn || '').localeCompare(String(a.notedOn || '')));
+  }
+
+  function getMovementStatuses(clientId) {
+    ensureSportsState();
+    return state.movementStatuses
+      .filter((item) => item.clientId === clientId)
+      .sort((a, b) => String(a.movementName || '').localeCompare(String(b.movementName || '')));
+  }
+
+  function normalizeMovementKey(value) {
+    return String(value || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '') || 'movimiento';
+  }
+
+  function getSportsLabel(value) {
+    const labels = {
+      ganancia_muscular: 'Ganancia muscular',
+      perdida_grasa: 'Pérdida de grasa',
+      fuerza: 'Fuerza',
+      acondicionamiento: 'Acondicionamiento',
+      salud_general: 'Salud general',
+      rendimiento: 'Rendimiento',
+      otro: 'Otro',
+      principiante: 'Principiante',
+      intermedio: 'Intermedio',
+      avanzado: 'Avanzado',
+      activa: 'Activa',
+      en_observacion: 'En observación',
+      resuelta: 'Resuelta',
+      dominado: 'DOMINADO',
+      tolerado: 'TOLERADO',
+      en_aprendizaje: 'EN_APRENDIZAJE',
+      no_evaluado: 'NO_EVALUADO',
+      adaptar: 'ADAPTAR',
+      restringido: 'RESTRINGIDO'
+    };
+    return labels[value] || value || 'Sin dato';
+  }
+
+  function buildBestLoadEntries(clientId) {
+    const bestByMovement = new Map();
+    const sessions = sortSessionsByDateAsc(getTrainingSessionsByClient(clientId));
+    sessions.forEach((session) => {
+      getSessionExercises(session).forEach((exercise) => {
+        getExerciseSets(exercise).forEach((setEntry) => {
+          const weight = Number(setEntry.weight || 0);
+          const reps = Number(setEntry.reps || 0);
+          if (!Number.isFinite(weight) || weight <= 0) {
+            return;
+          }
+          const key = normalizeMovementKey(exercise.exerciseName);
+          const current = bestByMovement.get(key);
+          if (!current || weight > current.weight || (weight === current.weight && reps > current.reps)) {
+            bestByMovement.set(key, {
+              movementName: exercise.exerciseName,
+              weight,
+              reps,
+              date: session.date || ''
+            });
+          }
+        });
+      });
+    });
+    return Array.from(bestByMovement.values()).sort((a, b) => a.movementName.localeCompare(b.movementName));
+  }
+
+  function buildSportsSummary(profile) {
+    return {
+      primaryGoal: getSportsLabel(profile?.primaryGoal || 'otro'),
+      experienceLevel: getSportsLabel(profile?.experienceLevel || 'principiante'),
+      sessionsPerWeek: Number(profile?.sessionsPerWeek || 0),
+      sessionDurationMinutes: Number(profile?.sessionDurationMinutes || 0)
+    };
+  }
+
+  function renderSportsProfilePanel(client) {
+    if (!els.sportsProfilePanel) {
+      return;
+    }
+    if (!client) {
+      els.sportsProfilePanel.innerHTML = '<div class="muted">Selecciona un cliente para revisar su ficha deportiva.</div>';
+      return;
+    }
+
+    ensureSportsState();
+    const profile = getSportsProfile(client.id);
+    const considerations = getSportsConsiderations(client.id);
+    const movements = getMovementStatuses(client.id);
+    const bestLoads = buildBestLoadEntries(client.id);
+    const summary = buildSportsSummary(profile);
+
+    const optionMarkup = (options, selectedValue, allowEmpty = false, emptyLabel = 'Sin definir') => `${allowEmpty ? `<option value="">${emptyLabel}</option>` : ''}${options.map((value) => `<option value="${value}" ${selectedValue === value ? 'selected' : ''}>${escapeHtml(getSportsLabel(value))}</option>`).join('')}`;
+
+    els.sportsProfilePanel.innerHTML = `
+      <div class="client-detail-card">
+        <div class="section-title">
+          <div>
+            <h3>${escapeHtml(getClientDisplayName(client))}</h3>
+            <div class="meta">Resumen rápido deportivo</div>
+          </div>
+          <button class="secondary small" type="button" data-client-sports="${client.id}">Ficha deportiva</button>
+        </div>
+        <div class="client-detail-grid">
+          <div><strong>Objetivo</strong><div class="meta">${escapeHtml(summary.primaryGoal)}</div></div>
+          <div><strong>Nivel</strong><div class="meta">${escapeHtml(summary.experienceLevel)}</div></div>
+          <div><strong>Frecuencia</strong><div class="meta">${summary.sessionsPerWeek || 0} sesiones/semana</div></div>
+          <div><strong>Duración</strong><div class="meta">${summary.sessionDurationMinutes || 0} min</div></div>
+        </div>
+      </div>
+
+      <form id="sportsProfileForm" class="form-grid" data-client-id="${client.id}">
+        <div class="section-title"><h3>Resumen</h3></div>
+        <div class="row">
+          <div>
+            <label for="sportsPrimaryGoal">Objetivo principal</label>
+            <select id="sportsPrimaryGoal" name="primaryGoal">${optionMarkup(SPORTS_GOAL_OPTIONS, profile?.primaryGoal || 'otro')}</select>
+          </div>
+          <div>
+            <label for="sportsSecondaryGoal">Objetivo secundario</label>
+            <select id="sportsSecondaryGoal" name="secondaryGoal">${optionMarkup(SPORTS_GOAL_OPTIONS, profile?.secondaryGoal || '', true)}</select>
+          </div>
+        </div>
+        <div>
+          <label for="sportsGoalNotes">Notas del objetivo</label>
+          <textarea id="sportsGoalNotes" name="goalNotes">${escapeHtml(profile?.goalNotes || '')}</textarea>
+        </div>
+        <div class="row">
+          <div>
+            <label for="sportsExperienceLevel">Nivel</label>
+            <select id="sportsExperienceLevel" name="experienceLevel">${optionMarkup(EXPERIENCE_LEVEL_OPTIONS, profile?.experienceLevel || 'principiante')}</select>
+          </div>
+          <div>
+            <label for="sportsExperienceMonths">Meses entrenando aprox.</label>
+            <input id="sportsExperienceMonths" name="experienceMonths" type="number" min="0" value="${Number(profile?.experienceMonths || 0)}">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="sportsCoachStartDate">Inicio con el coach</label>
+            <input id="sportsCoachStartDate" name="coachStartDate" type="date" value="${escapeHtml(profile?.coachStartDate || '')}">
+          </div>
+          <div>
+            <label for="sportsSessionsPerWeek">Sesiones por semana</label>
+            <input id="sportsSessionsPerWeek" name="sessionsPerWeek" type="number" min="0" max="14" value="${Number(profile?.sessionsPerWeek || 3)}">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="sportsSessionDuration">Duración habitual (min)</label>
+            <input id="sportsSessionDuration" name="sessionDurationMinutes" type="number" min="0" max="300" value="${Number(profile?.sessionDurationMinutes || 60)}">
+          </div>
+          <div>
+            <label for="sportsCoachNotes">Notas del coach</label>
+            <textarea id="sportsCoachNotes" name="coachNotes">${escapeHtml(profile?.coachNotes || '')}</textarea>
+          </div>
+        </div>
+        <button class="primary" type="submit">Guardar ficha deportiva</button>
+      </form>
+
+      <div class="client-detail-card">
+        <div class="section-title"><h3>Consideraciones</h3></div>
+        <form id="sportsConsiderationForm" class="form-grid" data-client-id="${client.id}">
+          <input type="hidden" name="considerationId" value="">
+          <div class="row">
+            <div>
+              <label for="sportsConsiderationTitle">Título</label>
+              <input id="sportsConsiderationTitle" name="title" type="text" required>
+            </div>
+            <div>
+              <label for="sportsConsiderationStatus">Estado</label>
+              <select id="sportsConsiderationStatus" name="status">${optionMarkup(CONSIDERATION_STATUS_OPTIONS, 'activa')}</select>
+            </div>
+          </div>
+          <div>
+            <label for="sportsConsiderationDescription">Descripción</label>
+            <textarea id="sportsConsiderationDescription" name="description"></textarea>
+          </div>
+          <div class="row">
+            <div>
+              <label for="sportsConsiderationDate">Fecha</label>
+              <input id="sportsConsiderationDate" name="notedOn" type="date" value="${getTodayLocalDate()}">
+            </div>
+            <div>
+              <label for="sportsConsiderationReviewDate">Revisión</label>
+              <input id="sportsConsiderationReviewDate" name="reviewDate" type="date">
+            </div>
+          </div>
+          <button class="secondary" type="submit">Agregar consideración</button>
+        </form>
+        <div class="training-set-list">
+          ${considerations.length ? considerations.map((item) => `
+            <div class="training-set-item">
+              <div>
+                <strong>${escapeHtml(item.title)}</strong>
+                <div class="meta">${escapeHtml(getSportsLabel(item.status))} · ${escapeHtml(formatClientDate(item.notedOn))}${item.reviewDate ? ` · Revisar ${escapeHtml(formatClientDate(item.reviewDate))}` : ''}</div>
+                <div class="meta">${escapeHtml(item.description || '')}</div>
+              </div>
+              <button class="danger small" type="button" data-sports-consideration-delete="${item.id}">Eliminar</button>
+            </div>`).join('') : '<div class="muted">Sin consideraciones registradas.</div>'}
+        </div>
+      </div>
+
+      <div class="client-detail-card">
+        <div class="section-title"><h3>Movimientos</h3></div>
+        <form id="movementStatusForm" class="form-grid" data-client-id="${client.id}">
+          <input type="hidden" name="movementStatusId" value="">
+          <div class="row">
+            <div>
+              <label for="movementName">Ejercicio / movimiento</label>
+              <input id="movementName" name="movementName" type="text" required>
+            </div>
+            <div>
+              <label for="movementStatus">Estado</label>
+              <select id="movementStatus" name="status">${optionMarkup(MOVEMENT_STATUS_OPTIONS, 'no_evaluado')}</select>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="movementLastEvaluatedOn">Última evaluación</label>
+              <input id="movementLastEvaluatedOn" name="lastEvaluatedOn" type="date" value="${getTodayLocalDate()}">
+            </div>
+            <div>
+              <label for="movementEvaluated1rm">1RM evaluado (opcional)</label>
+              <input id="movementEvaluated1rm" name="evaluated1rm" type="number" min="0" step="0.1">
+            </div>
+          </div>
+          <div>
+            <label for="movementCoachNote">Nota del coach</label>
+            <textarea id="movementCoachNote" name="coachNote"></textarea>
+          </div>
+          <button class="secondary" type="submit">Guardar estado de movimiento</button>
+        </form>
+        <div class="training-set-list">
+          ${movements.length ? movements.map((item) => `
+            <div class="training-set-item">
+              <div>
+                <strong>${escapeHtml(item.movementName)}</strong>
+                <div class="meta">${escapeHtml(getSportsLabel(item.status))}${item.lastEvaluatedOn ? ` · ${escapeHtml(formatClientDate(item.lastEvaluatedOn))}` : ''}${item.evaluated1rm !== '' ? ` · 1RM evaluado ${Number(item.evaluated1rm)} kg` : ''}</div>
+                <div class="meta">${escapeHtml(item.coachNote || '')}</div>
+              </div>
+              <button class="danger small" type="button" data-movement-status-delete="${item.id}">Eliminar</button>
+            </div>`).join('') : '<div class="muted">Sin movimientos evaluados.</div>'}
+        </div>
+      </div>
+
+      <div class="client-detail-card">
+        <div class="section-title"><h3>Marcas</h3></div>
+        <div class="training-set-list">
+          ${bestLoads.length ? bestLoads.map((item) => `
+            <div class="training-set-item">
+              <div>
+                <strong>${escapeHtml(item.movementName)}</strong>
+                <div class="meta">Mejor carga registrada: ${Number(item.weight)} kg × ${Number(item.reps)}${item.date ? ` · ${escapeHtml(formatClientDate(item.date))}` : ''}</div>
+              </div>
+            </div>`).join('') : '<div class="muted">Aún no hay cargas registradas en el historial.</div>'}
+        </div>
+      </div>`;
+  }
+
+  async function refreshSportsDataFromCloud() {
+    ensureSportsState();
+    const hasCloudSession = await refreshCloudSessionState();
+    if (!hasCloudSession || !cloudDataApi) {
+      return;
+    }
+
+    const [profilesResponse, considerationsResponse, movementStatusesResponse] = await Promise.all([
+      typeof cloudDataApi.listSportsProfiles === 'function' ? cloudDataApi.listSportsProfiles() : Promise.resolve({ data: [], error: null }),
+      typeof cloudDataApi.listSportsConsiderations === 'function' ? cloudDataApi.listSportsConsiderations() : Promise.resolve({ data: [], error: null }),
+      typeof cloudDataApi.listMovementStatuses === 'function' ? cloudDataApi.listMovementStatuses() : Promise.resolve({ data: [], error: null })
+    ]);
+
+    if (Array.isArray(profilesResponse?.data) && dataApi.normalizeSportsProfile) {
+      state.sportsProfiles = profilesResponse.data.map((item) => dataApi.normalizeSportsProfile(item));
+    }
+    if (Array.isArray(considerationsResponse?.data) && dataApi.normalizeSportsConsideration) {
+      state.sportsConsiderations = considerationsResponse.data.map((item) => dataApi.normalizeSportsConsideration(item));
+    }
+    if (Array.isArray(movementStatusesResponse?.data) && dataApi.normalizeMovementStatus) {
+      state.movementStatuses = movementStatusesResponse.data.map((item) => dataApi.normalizeMovementStatus(item));
+    }
   }
 
   function isValidDateInput(value) {
@@ -2030,6 +2345,7 @@
           <div><strong>Fecha de inicio</strong><div class="meta">${escapeHtml(formatClientDate(client.start_date))}</div></div>
         </div>
         <div class="inline-actions">
+          <button class="secondary" type="button" data-client-sports="${client.id}">Ficha deportiva</button>
           ${client.client_status === 'active' && client.active !== false ? `<button class="primary" type="button" data-client-student-view="${client.id}">Vista alumno</button>` : '<span class="muted">Vista alumno disponible para clientes activos</span>'}
         </div>
       </div>`;
@@ -2357,6 +2673,7 @@
           </div>
           <div class="inline-actions client-actions">
             <button class="ghost small" type="button" data-client-view="${client.id}">Ver ficha</button>
+            <button class="ghost small" type="button" data-client-sports="${client.id}">Ficha deportiva</button>
             <button class="secondary small" type="button" data-client-edit="${client.id}">Editar</button>
             <button class="secondary small" type="button" data-client-whatsapp="${client.id}" ${whatsappPhone ? '' : 'disabled'}>WhatsApp</button>
           </div>
@@ -2364,6 +2681,7 @@
     }).join('') : emptyMessage;
 
     renderClientDetail(selectedClient);
+    renderSportsProfilePanel(selectedClient);
     if (clientUi.notice && els.clientMessage) {
       els.clientMessage.textContent = clientUi.notice;
       els.clientMessage.classList.toggle('ok', clientUi.noticeTone === 'ok');
@@ -2398,6 +2716,8 @@
     if (response && !response.error) {
       setClientNotice('', 'neutral');
     }
+
+    await refreshSportsDataFromCloud();
 
     clientUi.loading = false;
     renderClients();
@@ -2560,6 +2880,175 @@
       }
       renderClients();
     }
+  }
+
+  async function saveSportsProfileForm(form) {
+    ensureSportsState();
+    const payload = Object.fromEntries(new FormData(form).entries());
+    const clientId = form.getAttribute('data-client-id') || clientUi.detailId || '';
+    if (!clientId) {
+      setClientNotice('Selecciona un cliente para guardar la ficha deportiva.', 'warn');
+      return;
+    }
+
+    const existing = getSportsProfile(clientId);
+    const nextProfile = dataApi.normalizeSportsProfile({
+      id: existing?.id,
+      clientId,
+      primaryGoal: payload.primaryGoal || 'otro',
+      secondaryGoal: payload.secondaryGoal || '',
+      goalNotes: payload.goalNotes || '',
+      experienceLevel: payload.experienceLevel || 'principiante',
+      experienceMonths: Number(payload.experienceMonths || 0),
+      coachStartDate: payload.coachStartDate || '',
+      sessionsPerWeek: Number(payload.sessionsPerWeek || 0),
+      sessionDurationMinutes: Number(payload.sessionDurationMinutes || 0),
+      coachNotes: payload.coachNotes || ''
+    });
+
+    state.sportsProfiles = (state.sportsProfiles || []).filter((item) => item.clientId !== clientId);
+    state.sportsProfiles.unshift(nextProfile);
+
+    if (isCloudSessionActive() && cloudDataApi && typeof cloudDataApi.upsertSportsProfile === 'function') {
+      const response = await cloudDataApi.upsertSportsProfile({
+        id: nextProfile.id,
+        client_id: clientId,
+        primary_goal: nextProfile.primaryGoal,
+        secondary_goal: nextProfile.secondaryGoal || null,
+        goal_notes: nextProfile.goalNotes || null,
+        experience_level: nextProfile.experienceLevel,
+        experience_months: nextProfile.experienceMonths,
+        coach_start_date: nextProfile.coachStartDate || null,
+        sessions_per_week: nextProfile.sessionsPerWeek,
+        session_duration_minutes: nextProfile.sessionDurationMinutes,
+        coach_notes: nextProfile.coachNotes || null
+      });
+      if (response?.error) {
+        throw new Error(response.error.message || response.error);
+      }
+      await refreshSportsDataFromCloud();
+      renderClients();
+      return;
+    }
+
+    persist();
+  }
+
+  async function saveSportsConsiderationForm(form) {
+    ensureSportsState();
+    const payload = Object.fromEntries(new FormData(form).entries());
+    const clientId = form.getAttribute('data-client-id') || clientUi.detailId || '';
+    if (!clientId || !String(payload.title || '').trim()) {
+      setClientNotice('La consideración necesita cliente y título.', 'warn');
+      return;
+    }
+
+    const nextItem = dataApi.normalizeSportsConsideration({
+      id: payload.considerationId || undefined,
+      clientId,
+      title: payload.title,
+      description: payload.description || '',
+      status: payload.status || 'activa',
+      notedOn: payload.notedOn || getTodayLocalDate(),
+      reviewDate: payload.reviewDate || ''
+    });
+
+    state.sportsConsiderations = (state.sportsConsiderations || []).filter((item) => item.id !== nextItem.id);
+    state.sportsConsiderations.unshift(nextItem);
+
+    if (isCloudSessionActive() && cloudDataApi && typeof cloudDataApi.upsertSportsConsideration === 'function') {
+      const response = await cloudDataApi.upsertSportsConsideration({
+        id: nextItem.id,
+        client_id: clientId,
+        title: nextItem.title,
+        description: nextItem.description || null,
+        status: nextItem.status,
+        noted_on: nextItem.notedOn,
+        review_date: nextItem.reviewDate || null
+      });
+      if (response?.error) {
+        throw new Error(response.error.message || response.error);
+      }
+      await refreshSportsDataFromCloud();
+      renderClients();
+      return;
+    }
+
+    persist();
+  }
+
+  async function saveMovementStatusForm(form) {
+    ensureSportsState();
+    const payload = Object.fromEntries(new FormData(form).entries());
+    const clientId = form.getAttribute('data-client-id') || clientUi.detailId || '';
+    const movementName = String(payload.movementName || '').trim();
+    if (!clientId || !movementName) {
+      setClientNotice('El estado de movimiento necesita cliente y nombre de ejercicio.', 'warn');
+      return;
+    }
+
+    const nextItem = dataApi.normalizeMovementStatus({
+      id: payload.movementStatusId || undefined,
+      clientId,
+      movementName,
+      movementKey: normalizeMovementKey(movementName),
+      status: payload.status || 'no_evaluado',
+      coachNote: payload.coachNote || '',
+      evaluated1rm: payload.evaluated1rm || '',
+      lastEvaluatedOn: payload.lastEvaluatedOn || ''
+    });
+
+    state.movementStatuses = (state.movementStatuses || []).filter((item) => item.id !== nextItem.id && !(item.clientId === clientId && item.movementKey === nextItem.movementKey));
+    state.movementStatuses.unshift(nextItem);
+
+    if (isCloudSessionActive() && cloudDataApi && typeof cloudDataApi.upsertMovementStatus === 'function') {
+      const response = await cloudDataApi.upsertMovementStatus({
+        id: nextItem.id,
+        client_id: clientId,
+        movement_name: nextItem.movementName,
+        movement_key: nextItem.movementKey,
+        status: nextItem.status,
+        coach_note: nextItem.coachNote || null,
+        evaluated_1rm: nextItem.evaluated1rm,
+        last_evaluated_on: nextItem.lastEvaluatedOn || null
+      });
+      if (response?.error) {
+        throw new Error(response.error.message || response.error);
+      }
+      await refreshSportsDataFromCloud();
+      renderClients();
+      return;
+    }
+
+    persist();
+  }
+
+  async function deleteSportsConsiderationById(id) {
+    state.sportsConsiderations = (state.sportsConsiderations || []).filter((item) => item.id !== id);
+    if (isCloudSessionActive() && cloudDataApi && typeof cloudDataApi.deleteSportsConsideration === 'function') {
+      const response = await cloudDataApi.deleteSportsConsideration(id);
+      if (response?.error) {
+        throw new Error(response.error.message || response.error);
+      }
+      await refreshSportsDataFromCloud();
+      renderClients();
+      return;
+    }
+    persist();
+  }
+
+  async function deleteMovementStatusById(id) {
+    state.movementStatuses = (state.movementStatuses || []).filter((item) => item.id !== id);
+    if (isCloudSessionActive() && cloudDataApi && typeof cloudDataApi.deleteMovementStatus === 'function') {
+      const response = await cloudDataApi.deleteMovementStatus(id);
+      if (response?.error) {
+        throw new Error(response.error.message || response.error);
+      }
+      await refreshSportsDataFromCloud();
+      renderClients();
+      return;
+    }
+    persist();
   }
 
   function editClientById(clientId) {
@@ -3925,6 +4414,14 @@
       return;
     }
 
+    const clientSportsId = target.getAttribute('data-client-sports');
+    if (clientSportsId) {
+      clientUi.detailId = clientSportsId;
+      renderClients();
+      els.sportsProfilePanel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+
     const clientEditId = target.getAttribute('data-client-edit');
     if (clientEditId) {
       editClientById(clientEditId);
@@ -3943,6 +4440,22 @@
     const clientStudentViewId = target.getAttribute('data-client-student-view');
     if (clientStudentViewId) {
       enterStudentMode(clientStudentViewId);
+      return;
+    }
+
+    const deleteConsiderationId = target.getAttribute('data-sports-consideration-delete');
+    if (deleteConsiderationId) {
+      deleteSportsConsiderationById(deleteConsiderationId).catch((error) => {
+        setClientNotice(error?.message || 'No se pudo eliminar la consideración.', 'bad');
+      });
+      return;
+    }
+
+    const deleteMovementStatusId = target.getAttribute('data-movement-status-delete');
+    if (deleteMovementStatusId) {
+      deleteMovementStatusById(deleteMovementStatusId).catch((error) => {
+        setClientNotice(error?.message || 'No se pudo eliminar el estado de movimiento.', 'bad');
+      });
       return;
     }
 
@@ -4379,7 +4892,44 @@
     }
   }
 
+  function handleDynamicFormSubmit(event) {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) {
+      return;
+    }
+    if (form.id === 'sportsProfileForm') {
+      event.preventDefault();
+      saveSportsProfileForm(form).then(() => {
+        setClientNotice('Ficha deportiva guardada.', 'ok');
+        renderClients();
+      }).catch((error) => {
+        setClientNotice(error?.message || 'No se pudo guardar la ficha deportiva.', 'bad');
+      });
+      return;
+    }
+    if (form.id === 'sportsConsiderationForm') {
+      event.preventDefault();
+      saveSportsConsiderationForm(form).then(() => {
+        setClientNotice('Consideración guardada.', 'ok');
+        renderClients();
+      }).catch((error) => {
+        setClientNotice(error?.message || 'No se pudo guardar la consideración.', 'bad');
+      });
+      return;
+    }
+    if (form.id === 'movementStatusForm') {
+      event.preventDefault();
+      saveMovementStatusForm(form).then(() => {
+        setClientNotice('Estado de movimiento guardado.', 'ok');
+        renderClients();
+      }).catch((error) => {
+        setClientNotice(error?.message || 'No se pudo guardar el estado de movimiento.', 'bad');
+      });
+    }
+  }
+
   document.addEventListener('click', handleClick);
+  document.addEventListener('submit', handleDynamicFormSubmit);
   els.form.addEventListener('submit', handleMovementSubmit);
   els.cashForm.addEventListener('submit', handleInitialCashSubmit);
   els.routineForm.addEventListener('submit', handleRoutineSubmit);

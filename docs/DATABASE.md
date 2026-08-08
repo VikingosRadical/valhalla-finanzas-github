@@ -240,6 +240,74 @@ Deuda técnica registrada:
 - `training_plans.client_id` es obligatorio en esquema actual. Se utiliza como referencia de origen para mantener compatibilidad sin migración.
 - Para plantillas globales puras desacopladas de cliente, se recomienda migración futura de esquema.
 
+## VALHALLA v0.8 - Sprint Ficha Deportiva v1
+
+Se agregan tres entidades nuevas para separar la información deportiva del cliente de finanzas, sesiones y resultados:
+
+- `client_sports_profiles`
+- `client_sports_considerations`
+- `client_movement_statuses`
+
+### Objetivo del diseño
+
+- Evitar guardar la ficha como texto libre.
+- Evitar reutilizar columnas de `clients` con otro propósito.
+- Evitar mezclar restricciones deportivas o estados técnicos dentro de `training_sets`.
+- Mantener el historial real en `training_sessions`, `training_exercises` y `training_sets`.
+
+### client_sports_profiles
+
+Una fila por cliente.
+
+Campos principales:
+
+- `primary_goal`
+- `secondary_goal`
+- `goal_notes`
+- `experience_level`
+- `experience_months`
+- `coach_start_date`
+- `sessions_per_week`
+- `session_duration_minutes`
+- `coach_notes`
+
+### client_sports_considerations
+
+Múltiples filas por cliente para restricciones, observaciones o antecedentes relevantes de entrenamiento.
+
+Campos principales:
+
+- `title`
+- `description`
+- `status` (`activa`, `en_observacion`, `resuelta`)
+- `noted_on`
+- `review_date`
+
+### client_movement_statuses
+
+Relación entre cliente y movimiento/ejercicio, usando nombre + clave normalizada temporal mientras no exista Biblioteca avanzada.
+
+Campos principales:
+
+- `movement_name`
+- `movement_key`
+- `status`
+- `coach_note`
+- `evaluated_1rm` (opcional)
+- `last_evaluated_on`
+
+### Marcas y progreso
+
+- `Mejor carga registrada` se deriva del historial real en `training_sets`.
+- No se calcula 1RM automáticamente.
+- `evaluated_1rm` queda como campo opcional, explícito y separado.
+
+### Seguridad
+
+- Todas las tablas nuevas usan `owner_id` + `client_id`.
+- Todas quedan cubiertas por RLS admin (`owner_id = auth.uid()` y `current_user_role() = 'admin'`).
+- No se relajaron políticas existentes de clientes ni de entrenamientos.
+
 ### Migración manual futura
 
 Se deja preparada una función manual futura:
