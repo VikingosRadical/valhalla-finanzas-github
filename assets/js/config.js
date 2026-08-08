@@ -6,6 +6,7 @@
   window.SUPABASE_URL = 'https://xxhkcwwltqwzfxqxqved.supabase.co';
   window.SUPABASE_ANON_KEY = 'sb_publishable_pxM-d1vFSVRv1rFYj01Tgw_b3qcrTXp';
 
+  window.VALHALLA_CONFIG = {
     SUPABASE_URL: window.SUPABASE_URL,
     SUPABASE_ANON_KEY: window.SUPABASE_ANON_KEY
   };

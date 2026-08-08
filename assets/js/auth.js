@@ -10,6 +10,16 @@
       return null;
     }
 
+    const keyPreview = supabaseAnonKey.slice(0, 15);
+    const keyLength = supabaseAnonKey.length;
+    const createClientAvailable = Boolean(window.supabase && typeof window.supabase.createClient === 'function');
+    console.info('[VALHALLA Cloud Debug]', {
+      projectUrl: supabaseUrl,
+      keyFirst15: keyPreview,
+      keyLength,
+      createClientAvailable
+    });
+
     if (!clientInstance && window.supabase && typeof window.supabase.createClient === 'function') {
       clientInstance = window.supabase.createClient(supabaseUrl, supabaseAnonKey, {
         auth: {
@@ -17,6 +27,9 @@
           autoRefreshToken: true,
           detectSessionInUrl: true
         }
+      });
+      console.info('[VALHALLA Cloud Debug]', {
+        clientCreated: Boolean(clientInstance)
       });
     }
 

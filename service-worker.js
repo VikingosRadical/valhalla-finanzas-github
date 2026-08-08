@@ -1,4 +1,4 @@
-﻿const CACHE='valhalla-v0.7.1';
+﻿const CACHE='valhalla-v0.8.0-cloud';
 const ASSETS=['./','./index.html','./manifest.json','./assets/css/styles.css','./assets/images/logo-vikingos.png','./assets/js/config.js','./assets/js/data.js','./assets/js/supabase.js','./assets/js/auth.js','./assets/js/cloud-data.js','./assets/js/finance.js','./assets/js/app.js','./docs/VISION.md','./docs/ROADMAP.md','./docs/BACKLOG.md','./docs/ARCHITECTURE.md','./docs/DATABASE.md','./docs/CODING_RULES.md','./docs/AI.md','./docs/CHANGELOG.md'];
 
 self.addEventListener('install', event => {
