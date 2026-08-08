@@ -40,6 +40,11 @@
     records: (state.clients || []).map((client) => normalizeClientRecord(client)),
     loading: false
   };
+  const cloudUi = {
+    sessionActive: false,
+    ownerId: '',
+    authUserId: ''
+  };
 
   const els = {
     cloudModeBadge: document.getElementById('cloudModeBadge'),
@@ -158,6 +163,19 @@
   };
 
   function persist() {
+    if (cloudUi.sessionActive) {
+      const localState = dataApi.loadState() || {};
+      const snapshot = {
+        ...state,
+        clients: Array.isArray(localState.clients) ? localState.clients : [],
+        trainingModelVersion: localState.trainingModelVersion || '0.8.0',
+        trainingsV08: localState.trainingsV08 || { plans: [], sessions: [] }
+      };
+      dataApi.saveState(snapshot);
+      render();
+      return;
+    }
+
     if (supabaseApi && typeof supabaseApi.saveData === 'function') {
       supabaseApi.saveData(state);
     } else {
@@ -177,6 +195,38 @@
 
   function isCloudMode() {
     return Boolean(supabaseApi && typeof supabaseApi.isCloudEnabled === 'function' && supabaseApi.isCloudEnabled());
+  }
+
+  function isCloudSessionActive() {
+    return Boolean(isCloudMode() && cloudUi.sessionActive && cloudUi.ownerId);
+  }
+
+  async function refreshCloudSessionState() {
+    if (!isCloudMode() || !cloudDataApi || typeof cloudDataApi.getOwnerContext !== 'function') {
+      cloudUi.sessionActive = false;
+      cloudUi.ownerId = '';
+      cloudUi.authUserId = '';
+      return false;
+    }
+
+    const ownerContext = await cloudDataApi.getOwnerContext();
+    if (ownerContext && !ownerContext.error && ownerContext.ownerId) {
+      cloudUi.sessionActive = true;
+      cloudUi.ownerId = ownerContext.ownerId;
+      cloudUi.authUserId = ownerContext.authUserId || '';
+      if (els.cloudModeBadge) {
+        els.cloudModeBadge.textContent = 'Modo Cloud';
+      }
+      return true;
+    }
+
+    cloudUi.sessionActive = false;
+    cloudUi.ownerId = '';
+    cloudUi.authUserId = '';
+    if (els.cloudModeBadge) {
+      els.cloudModeBadge.textContent = 'Modo Local';
+    }
+    return false;
   }
 
   function normalizeClientRecord(client) {
@@ -580,7 +630,7 @@
     renderStudentTraining();
   }
 
-  function saveStudentSetEntry() {
+  async function saveStudentSetEntry() {
     const session = getStudentSession();
     const exercise = getStudentExercise();
     if (!session || !exercise) {
@@ -650,10 +700,23 @@
     if (doneSets < plannedSets && !els.studentWeightInput?.value) {
       els.studentWeightInput.value = String(Number(exercise.targetWeight || 0));
     }
+
+    if (isCloudSessionActive()) {
+      const syncResult = await syncSessionToCloud(session);
+      if (!syncResult.ok) {
+        if (els.studentSetNotice) {
+          els.studentSetNotice.textContent = syncResult.error || 'No se pudo sincronizar la serie en Cloud.';
+        }
+        return;
+      }
+      renderStudentTraining();
+      return;
+    }
+
     persist();
   }
 
-  function goToNextStudentExercise() {
+  async function goToNextStudentExercise() {
     const exercises = getStudentExercises();
     if (!exercises.length) {
       return;
@@ -675,16 +738,42 @@
     if (session) {
       session.status = 'completed';
     }
+
+    if (isCloudSessionActive() && session) {
+      const syncResult = await syncSessionToCloud(session);
+      if (!syncResult.ok) {
+        if (els.studentSetNotice) {
+          els.studentSetNotice.textContent = syncResult.error || 'No se pudo completar la sesión en Cloud.';
+        }
+        return;
+      }
+      renderStudentTraining();
+      return;
+    }
+
     persist();
   }
 
-  function finalizeStudentSession() {
+  async function finalizeStudentSession() {
     const session = getStudentSession();
     if (session) {
       session.status = 'completed';
     }
     stopStudentRestTimer();
-    persist();
+
+    if (isCloudSessionActive() && session) {
+      const syncResult = await syncSessionToCloud(session);
+      if (!syncResult.ok) {
+        if (els.studentSetNotice) {
+          els.studentSetNotice.textContent = syncResult.error || 'No se pudo finalizar en Cloud.';
+        }
+        return;
+      }
+      renderStudentTraining();
+    } else {
+      persist();
+    }
+
     exitStudentMode();
   }
 
@@ -1126,7 +1215,9 @@
           const response = await window.VALHALLA.auth.signIn(email, password);
           if (response.ok) {
             authMessage.textContent = 'Sesión lista para Supabase.';
-            refreshClients().catch(() => {});
+            await refreshCloudSessionState();
+            await refreshClients();
+            await refreshTrainingsV08FromCloud();
           } else {
             authMessage.textContent = response.error || 'No se pudo iniciar sesión.';
           }
@@ -1140,7 +1231,7 @@
 
   function show(section) {
     if (els.cloudModeBadge) {
-      els.cloudModeBadge.textContent = supabaseApi && typeof supabaseApi.getModeLabel === 'function' ? supabaseApi.getModeLabel() : 'Modo Local';
+      els.cloudModeBadge.textContent = isCloudSessionActive() ? 'Modo Cloud' : 'Modo Local';
     }
     renderAuthPanel();
     Object.entries(els.sections).forEach(([name, element]) => {
@@ -1160,6 +1251,7 @@
     }
     if (section === 'trainings') {
       ensureDateValue(els.routineDate);
+      refreshTrainingsV08FromCloud().catch(() => {});
     }
     if (section === 'studentTraining') {
       renderStudentTraining();
@@ -1432,7 +1524,8 @@
     clientUi.records = (state.clients || []).map((client) => normalizeClientRecord(client));
     renderClients();
 
-    if (!isCloudMode() || !cloudDataApi || typeof cloudDataApi.listClients !== 'function') {
+    const hasCloudSession = await refreshCloudSessionState();
+    if (!hasCloudSession || !cloudDataApi || typeof cloudDataApi.listClients !== 'function') {
       clientUi.loading = false;
       renderClients();
       return;
@@ -1443,10 +1536,9 @@
       setClientNotice(response.error, 'bad');
     }
 
-    if (response && Array.isArray(response.data) && response.data.length) {
+    if (response && Array.isArray(response.data)) {
       state.clients = response.data.map((client) => normalizeClientRecord(client));
       clientUi.records = state.clients.slice();
-      persist();
     }
 
     if (response && !response.error) {
@@ -1455,6 +1547,60 @@
 
     clientUi.loading = false;
     renderClients();
+  }
+
+  async function refreshTrainingsV08FromCloud() {
+    ensureTrainingsV08State();
+    const hasCloudSession = await refreshCloudSessionState();
+    if (!hasCloudSession || !cloudDataApi || typeof cloudDataApi.listTrainingSessions !== 'function') {
+      return;
+    }
+
+    const sessionsResponse = await cloudDataApi.listTrainingSessions();
+    if (sessionsResponse && sessionsResponse.error && sessionsResponse.error !== 'Modo local') {
+      if (els.routineMessage) {
+        els.routineMessage.textContent = sessionsResponse.error.message || sessionsResponse.error;
+      }
+      return;
+    }
+
+    if (sessionsResponse && Array.isArray(sessionsResponse.data)) {
+      state.trainingModelVersion = '0.8.0';
+      state.trainingsV08.sessions = sessionsResponse.data.slice();
+    }
+
+    if (cloudDataApi && typeof cloudDataApi.listTrainingPlans === 'function') {
+      const plansResponse = await cloudDataApi.listTrainingPlans();
+      if (plansResponse && Array.isArray(plansResponse.data)) {
+        state.trainingsV08.plans = plansResponse.data.map((plan) => ({
+          id: plan.id,
+          clientId: plan.client_id,
+          name: plan.name || 'Plan de entrenamiento',
+          active: plan.active !== false,
+          notes: plan.notes || ''
+        }));
+      }
+    }
+
+    renderTrainings();
+    renderStudentTraining();
+  }
+
+  async function syncSessionToCloud(session) {
+    if (!session) {
+      return { ok: false, error: 'Sesion invalida' };
+    }
+    const hasCloudSession = await refreshCloudSessionState();
+    if (!hasCloudSession || !cloudDataApi || typeof cloudDataApi.saveTrainingSessionDeep !== 'function') {
+      return { ok: false, error: 'Modo local' };
+    }
+
+    const response = await cloudDataApi.saveTrainingSessionDeep(session);
+    if (response && response.error) {
+      return { ok: false, error: response.error.message || response.error };
+    }
+
+    return { ok: true };
   }
 
   function openClientWhatsApp(client) {
@@ -1495,6 +1641,10 @@
       return;
     }
 
+    if (isCloudMode()) {
+      await refreshCloudSessionState();
+    }
+
     const payload = buildClientFormPayload();
     const existingClient = clientUi.editingId ? (clientUi.records || []).find((client) => client.id === clientUi.editingId) || null : null;
     const validation = validateClientPayload(payload, clientUi.editingId);
@@ -1516,7 +1666,7 @@
       const nextClient = buildClientRecord(payload, existingClient);
       let savedClient = nextClient;
 
-      if (isCloudMode()) {
+      if (isCloudSessionActive()) {
         if (!cloudDataApi || typeof cloudDataApi.createClient !== 'function' || typeof cloudDataApi.updateClient !== 'function') {
           throw new Error('La integración Cloud no está disponible');
         }
@@ -1544,7 +1694,11 @@
         els.clientFormPanel.classList.add('hidden');
       }
       setClientNotice(existingClient ? 'Cliente actualizado correctamente.' : 'Cliente guardado correctamente.', 'ok');
-      persist();
+      if (!isCloudSessionActive()) {
+        persist();
+      } else {
+        render();
+      }
       renderClients();
     } catch (error) {
       setClientNotice(error.message || 'No se pudo guardar el cliente.', 'bad');
@@ -2268,7 +2422,7 @@
     persist();
   }
 
-  function handleRoutineSubmit(event) {
+  async function handleRoutineSubmit(event) {
     event.preventDefault();
     ensureTrainingsV08State();
     const activeClients = getActiveTrainingClients();
@@ -2380,11 +2534,22 @@
       els.historyExercise.value = exerciseName;
     }
 
+    if (isCloudSessionActive()) {
+      const syncResult = await syncSessionToCloud(activeSession);
+      if (!syncResult.ok) {
+        els.routineMessage.textContent = syncResult.error || 'No se pudo sincronizar la sesión en Cloud.';
+        return;
+      }
+      els.routineMessage.textContent = 'Ejercicio preparado y sincronizado en Cloud.';
+      renderTrainings();
+      return;
+    }
+
     els.routineMessage.textContent = 'Ejercicio preparado. Ahora registra serie por serie.';
     persist();
   }
 
-  function saveTrainingSetEntry() {
+  async function saveTrainingSetEntry() {
     ensureTrainingsV08State();
     const session = getCurrentTrainingSession();
     const exercise = getCurrentTrainingExercise();
@@ -2443,6 +2608,21 @@
     if (els.setRecordNotice) {
       els.setRecordNotice.textContent = isPotentialPr ? 'Posible nuevo récord' : 'Serie guardada.';
     }
+    if (isCloudSessionActive()) {
+      const syncResult = await syncSessionToCloud(session);
+      if (!syncResult.ok) {
+        if (els.routineMessage) {
+          els.routineMessage.textContent = syncResult.error || 'No se pudo sincronizar la serie en Cloud.';
+        }
+        return;
+      }
+      if (els.routineMessage) {
+        els.routineMessage.textContent = 'Serie guardada y sincronizada en Cloud.';
+      }
+      renderTrainings();
+      return;
+    }
+
     if (els.routineMessage) {
       els.routineMessage.textContent = 'Serie guardada correctamente.';
     }
@@ -2823,12 +3003,20 @@
     }
 
     if (target === els.studentSaveSetBtn) {
-      saveStudentSetEntry();
+      saveStudentSetEntry().catch((error) => {
+        if (els.studentSetNotice) {
+          els.studentSetNotice.textContent = error?.message || 'No se pudo guardar la serie.';
+        }
+      });
       return;
     }
 
     if (target === els.studentNextExerciseBtn) {
-      goToNextStudentExercise();
+      goToNextStudentExercise().catch((error) => {
+        if (els.studentSetNotice) {
+          els.studentSetNotice.textContent = error?.message || 'No se pudo avanzar de ejercicio.';
+        }
+      });
       return;
     }
 
@@ -2860,7 +3048,11 @@
     }
 
     if (target === els.studentFinalizeBtn) {
-      finalizeStudentSession();
+      finalizeStudentSession().catch((error) => {
+        if (els.studentSetNotice) {
+          els.studentSetNotice.textContent = error?.message || 'No se pudo finalizar la sesión.';
+        }
+      });
       return;
     }
 
@@ -3000,7 +3192,13 @@
     trainingUi.selectedExercise = event.target.value || '';
     renderTrainings();
   });
-  els.saveSetBtn?.addEventListener('click', saveTrainingSetEntry);
+  els.saveSetBtn?.addEventListener('click', () => {
+    saveTrainingSetEntry().catch((error) => {
+      if (els.routineMessage) {
+        els.routineMessage.textContent = error?.message || 'No se pudo guardar la serie.';
+      }
+    });
+  });
   document.addEventListener('input', (event) => {
     if (event.target.closest('#nutritionPlanForm')) {
       updatePlanDraftFromInputs(event);
@@ -3014,7 +3212,17 @@
 
   show('home');
   render();
-  refreshClients().catch(() => {});
+  refreshCloudSessionState()
+    .then((hasCloudSession) => {
+      if (hasCloudSession) {
+        return Promise.all([
+          refreshClients(),
+          refreshTrainingsV08FromCloud()
+        ]);
+      }
+      return refreshClients();
+    })
+    .catch(() => {});
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./service-worker.js').catch(() => {});

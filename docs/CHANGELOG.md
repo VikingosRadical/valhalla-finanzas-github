@@ -111,3 +111,21 @@
 - Se añadió cierre de sesión con resumen de ejercicios completados, series y récords potenciales.
 - Se implementó descanso manual con cuenta regresiva local, `+15 s`, `Saltar` y aviso por vibración/sonido cuando es posible.
 - Se reforzó privacidad visual en vista alumno ocultando datos financieros y administrativos sensibles.
+
+## VALHALLA v0.8 — Fase 3 — Sincronización Cloud de Clientes y Entrenamientos - 2026-08-07
+
+### Nuevas capacidades
+
+- Se completó el flujo cloud de clientes con listado, creación y edición en Supabase usando `owner_id` del usuario autenticado.
+- Se incorporó sincronización cloud para entrenamientos v0.8 con persistencia de sesiones, ejercicios y series.
+- Se añadieron operaciones cloud para `training_plans`, `training_sessions`, `training_exercises` y `training_sets`.
+- Se mantienen todas las funciones actuales de entrenamiento: series individuales, corrección, historial, último peso, botones rápidos, récord potencial y descanso.
+- Se reforzó el indicador operativo en interfaz para mostrar `Modo Cloud` cuando existe sesión cloud y `Modo Local` en fallback.
+- Se añadió preparación explícita de función manual futura `Subir datos locales a Cloud` sin ejecución automática.
+
+### Seguridad
+
+- Se preparó el esquema SQL con RLS para que admin gestione sus propios datos por `owner_id`.
+- Se añadió lectura de entrenamientos para cliente autenticado solo sobre sus propios registros.
+- No se habilitaron permisos temporales para `trainer` en esta fase.
+- No se expone información financiera en el flujo alumno de entrenamientos.

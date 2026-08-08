@@ -156,3 +156,55 @@ Privacidad visual de vista alumno:
 - Solo se muestra información de entrenamiento del cliente seleccionado.
 - No se muestran pagos, mensualidades, renovaciones ni datos financieros.
 - No se muestran observaciones administrativas privadas; solo instrucciones técnicas por ejercicio (`coachNotes`).
+
+## VALHALLA v0.8 - Fase 3 (sincronización Cloud de clientes y entrenamientos)
+
+En Fase 3, cuando existe sesión autenticada en Cloud, `clients` y `trainingsV08` pasan a usar Supabase como fuente compartida.
+
+- En sesión Cloud: se leen y escriben clientes/entrenamientos en Supabase.
+- Sin sesión Cloud: se mantiene modo local.
+- No se ejecuta migración automática de local hacia Cloud.
+
+### Tablas nuevas de entrenamientos v0.8
+
+- `training_plans`
+- `training_sessions`
+- `training_exercises`
+- `training_sets`
+
+Relación principal por `client_id` y `owner_id`.
+
+Campos clave de series (`training_sets`):
+
+- `weight`
+- `reps`
+- `set_number`
+- `completed`
+- `created_at`
+
+Campos preparados:
+
+- `technique_status`
+- `coach_validated`
+- `personal_record`
+
+### Seguridad y RLS
+
+- Admin: puede gestionar sus propios clientes y entrenamientos (`owner_id = auth.uid()`).
+- Trainer: estructura preparada para fase futura, sin permisos temporales en esta fase.
+- Client: solo lectura de sus propios entrenamientos, resolviendo por `clients.auth_user_id = auth.uid()`.
+- No se habilitan políticas de escritura para clientes en entrenamientos en esta fase.
+
+### Sincronización y conflictos
+
+- En Cloud, la app sincroniza sesiones, ejercicios y series al guardar.
+- El modo local se conserva como fallback cuando no hay sesión Cloud.
+- Se evita usar local como fuente paralela de clientes/entrenamientos en sesión Cloud para no crear conflicto de autoridad.
+
+### Migración manual futura
+
+Se deja preparada una función manual futura:
+
+- `Subir datos locales a Cloud`
+
+No se dispara automáticamente en esta fase.

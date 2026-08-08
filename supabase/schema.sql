@@ -239,6 +239,83 @@ create or replace trigger trg_client_renewals_updated_at
 before update on public.client_renewals
 for each row execute function public.set_updated_at();
 
+-- Tablas entrenamiento v0.8 (modelo cloud)
+create table if not exists public.training_plans (
+  id text primary key default gen_random_uuid()::text,
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  client_id uuid not null references public.clients(id) on delete cascade,
+  name text not null,
+  notes text,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create or replace trigger trg_training_plans_updated_at
+before update on public.training_plans
+for each row execute function public.set_updated_at();
+
+create table if not exists public.training_sessions (
+  id text primary key default gen_random_uuid()::text,
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  client_id uuid not null references public.clients(id) on delete cascade,
+  plan_id text references public.training_plans(id) on delete set null,
+  group_session_id text,
+  session_date date,
+  title text not null,
+  status text not null check (status in ('planned', 'in_progress', 'completed')) default 'in_progress',
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create or replace trigger trg_training_sessions_updated_at
+before update on public.training_sessions
+for each row execute function public.set_updated_at();
+
+create table if not exists public.training_exercises (
+  id text primary key default gen_random_uuid()::text,
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  client_id uuid not null references public.clients(id) on delete cascade,
+  session_id text not null references public.training_sessions(id) on delete cascade,
+  exercise_name text not null,
+  exercise_order integer not null default 1,
+  planned_sets integer not null default 1,
+  planned_rep_min integer not null default 1,
+  planned_rep_max integer not null default 1,
+  target_weight numeric not null default 0,
+  rest_seconds integer not null default 90,
+  coach_notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create or replace trigger trg_training_exercises_updated_at
+before update on public.training_exercises
+for each row execute function public.set_updated_at();
+
+create table if not exists public.training_sets (
+  id text primary key,
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  client_id uuid not null references public.clients(id) on delete cascade,
+  session_id text not null references public.training_sessions(id) on delete cascade,
+  exercise_id text not null references public.training_exercises(id) on delete cascade,
+  set_number integer not null,
+  weight numeric not null default 0,
+  reps integer not null default 0,
+  completed boolean not null default true,
+  technique_status text not null default 'pending',
+  coach_validated boolean not null default false,
+  personal_record boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (exercise_id, set_number)
+);
+
+create or replace trigger trg_training_sets_updated_at
+before update on public.training_sets
+for each row execute function public.set_updated_at();
+
 -- Índices recomendados para crecimiento sostenido
 create index if not exists idx_profiles_role_active on public.profiles (role, active);
 create index if not exists idx_accounts_owner_active on public.accounts (owner_id, active, operational);
@@ -256,6 +333,11 @@ create index if not exists idx_client_payments_owner_date on public.client_payme
 create index if not exists idx_client_payments_client on public.client_payments (client_id);
 create index if not exists idx_client_assessments_client_date on public.client_assessments (client_id, assessment_date desc);
 create index if not exists idx_client_renewals_client_date on public.client_renewals (client_id, expected_date desc, status);
+create index if not exists idx_training_plans_owner_client on public.training_plans (owner_id, client_id, active);
+create index if not exists idx_training_sessions_owner_client_date on public.training_sessions (owner_id, client_id, session_date desc);
+create index if not exists idx_training_exercises_session_order on public.training_exercises (session_id, exercise_order);
+create index if not exists idx_training_sets_exercise_set on public.training_sets (exercise_id, set_number);
+create index if not exists idx_training_sets_client_created on public.training_sets (client_id, created_at desc);
 
 -- Habilitar RLS
 alter table public.profiles enable row level security;
@@ -268,6 +350,10 @@ alter table public.clients enable row level security;
 alter table public.client_payments enable row level security;
 alter table public.client_assessments enable row level security;
 alter table public.client_renewals enable row level security;
+alter table public.training_plans enable row level security;
+alter table public.training_sessions enable row level security;
+alter table public.training_exercises enable row level security;
+alter table public.training_sets enable row level security;
 
 -- Políticas base
 -- Admin: puede gestionar sus propios registros.
@@ -331,6 +417,30 @@ for all
 using (public.current_user_role() = 'admin' and owner_id = auth.uid())
 with check (public.current_user_role() = 'admin' and owner_id = auth.uid());
 
+drop policy if exists training_plans_admin_policy on public.training_plans;
+create policy training_plans_admin_policy on public.training_plans
+for all
+using (public.current_user_role() = 'admin' and owner_id = auth.uid())
+with check (public.current_user_role() = 'admin' and owner_id = auth.uid());
+
+drop policy if exists training_sessions_admin_policy on public.training_sessions;
+create policy training_sessions_admin_policy on public.training_sessions
+for all
+using (public.current_user_role() = 'admin' and owner_id = auth.uid())
+with check (public.current_user_role() = 'admin' and owner_id = auth.uid());
+
+drop policy if exists training_exercises_admin_policy on public.training_exercises;
+create policy training_exercises_admin_policy on public.training_exercises
+for all
+using (public.current_user_role() = 'admin' and owner_id = auth.uid())
+with check (public.current_user_role() = 'admin' and owner_id = auth.uid());
+
+drop policy if exists training_sets_admin_policy on public.training_sets;
+create policy training_sets_admin_policy on public.training_sets
+for all
+using (public.current_user_role() = 'admin' and owner_id = auth.uid())
+with check (public.current_user_role() = 'admin' and owner_id = auth.uid());
+
 -- Cliente autenticado: solo puede leer su propio profile
 create policy profiles_client_read_policy on public.profiles
 for select
@@ -351,8 +461,29 @@ create policy client_renewals_client_read_policy on public.client_renewals
 for select
 using (client_id in (select id from public.clients where auth_user_id = auth.uid()));
 
+drop policy if exists training_plans_client_read_policy on public.training_plans;
+create policy training_plans_client_read_policy on public.training_plans
+for select
+using (client_id in (select id from public.clients where auth_user_id = auth.uid()));
+
+drop policy if exists training_sessions_client_read_policy on public.training_sessions;
+create policy training_sessions_client_read_policy on public.training_sessions
+for select
+using (client_id in (select id from public.clients where auth_user_id = auth.uid()));
+
+drop policy if exists training_exercises_client_read_policy on public.training_exercises;
+create policy training_exercises_client_read_policy on public.training_exercises
+for select
+using (client_id in (select id from public.clients where auth_user_id = auth.uid()));
+
+drop policy if exists training_sets_client_read_policy on public.training_sets;
+create policy training_sets_client_read_policy on public.training_sets
+for select
+using (client_id in (select id from public.clients where auth_user_id = auth.uid()));
+
 -- Los clientes no pueden insertar, editar ni eliminar evaluaciones, renovaciones, pagos ni información financiera.
 -- No se crean políticas de escritura para esas tablas; quedarán bloqueadas por defecto.
+-- Entrenadores: se deja preparada la estructura para permisos futuros, sin habilitar permisos temporales en esta fase.
 
 -- Trigger para crear profile básico al registrarse
 create or replace function public.handle_new_user()
