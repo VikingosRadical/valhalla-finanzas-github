@@ -201,6 +201,19 @@ Campos preparados:
 - El modo local se conserva como fallback cuando no hay sesión Cloud.
 - Se evita usar local como fuente paralela de clientes/entrenamientos en sesión Cloud para no crear conflicto de autoridad.
 
+### Flujo coach -> alumno -> registro
+
+- El coach crea sesiones por cliente activo y define estado `planned`, `in_progress` o `completed`.
+- Cada sesión contiene ejercicios ordenados por `exercise_order` con planificación de series/repeticiones/peso/descanso.
+- El alumno registra series reales (`weight`, `reps`, `completed`) desde vista móvil de entrenamiento.
+- El estado de sesión pasa a `in_progress` al registrar series y a `completed` al finalizar entrenamiento.
+
+### Integridad de sincronización
+
+- La sincronización profunda en Cloud aplica inserciones y actualizaciones.
+- También limpia ejercicios y series eliminadas localmente para que Supabase refleje el estado real de la sesión.
+- No se crean tablas adicionales ni se modifica `schema.sql` en este sprint.
+
 ### Migración manual futura
 
 Se deja preparada una función manual futura:

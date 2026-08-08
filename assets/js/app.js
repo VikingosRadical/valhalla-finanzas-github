@@ -15,7 +15,8 @@
     selectedExercise: '',
     activeSessionId: '',
     activeExerciseId: '',
-    editingSetNumber: null
+    editingSetNumber: null,
+    editingExerciseId: ''
   };
   const studentUi = {
     enabled: false,
@@ -97,9 +98,22 @@
     routineMessage: document.getElementById('routineMessage'),
     trainingClientNotice: document.getElementById('trainingClientNotice'),
     studentId: document.getElementById('studentId'),
+    trainingSessionId: document.getElementById('trainingSessionId'),
+    createSessionBtn: document.getElementById('createSessionBtn'),
+    coachExerciseList: document.getElementById('coachExerciseList'),
     restPreset: document.getElementById('restPreset'),
     restInput: document.getElementById('rest'),
     routineDate: document.getElementById('routineDate'),
+    routineName: document.getElementById('routineName'),
+    sessionStatus: document.getElementById('sessionStatus'),
+    sessionNotes: document.getElementById('sessionNotes'),
+    exerciseInput: document.getElementById('exercise'),
+    exerciseIdInput: document.getElementById('exerciseId'),
+    plannedSetsInput: document.getElementById('sets'),
+    plannedRepMinInput: document.getElementById('plannedRepMin'),
+    plannedRepMaxInput: document.getElementById('plannedRepMax'),
+    targetWeightInput: document.getElementById('weight'),
+    techniqueNotesInput: document.getElementById('techniqueNotes'),
     historyClientId: document.getElementById('historyClientId'),
     historyExercise: document.getElementById('historyExercise'),
     trainingProgressSummary: document.getElementById('trainingProgressSummary'),
@@ -314,6 +328,128 @@
     return (state.trainingsV08.sessions || []).filter((session) => session.clientId === clientId);
   }
 
+  function getSessionStatusLabel(status) {
+    const labels = {
+      planned: 'Planificada',
+      in_progress: 'En progreso',
+      completed: 'Completada'
+    };
+    return labels[status] || 'Planificada';
+  }
+
+  function getSessionStatusTone(status) {
+    if (status === 'completed') {
+      return 'ok';
+    }
+    if (status === 'in_progress') {
+      return 'warn';
+    }
+    return 'muted';
+  }
+
+  function getDefaultSessionTitle(clientId) {
+    const client = getClientById(clientId);
+    const today = getTodayLocalDate();
+    const name = client ? getClientDisplayName(client).split(' ')[0] : 'Alumno';
+    return `Entrenamiento ${name} ${today}`;
+  }
+
+  function normalizeSessionExerciseOrder(session) {
+    const exercises = getSessionExercises(session);
+    exercises.sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+    exercises.forEach((exercise, index) => {
+      exercise.order = index + 1;
+    });
+  }
+
+  function getSessionBuckets(clientId) {
+    const today = getTodayLocalDate();
+    const sessions = sortSessionsByDateAsc(getTrainingSessionsByClient(clientId));
+    const buckets = {
+      today: [],
+      upcoming: [],
+      completed: []
+    };
+
+    sessions.forEach((session) => {
+      const date = session.date || '';
+      if (session.status === 'completed') {
+        buckets.completed.push(session);
+        return;
+      }
+      if (date === today) {
+        buckets.today.push(session);
+        return;
+      }
+      if (date && date > today) {
+        buckets.upcoming.push(session);
+        return;
+      }
+      buckets.today.push(session);
+    });
+
+    buckets.completed.reverse();
+    return buckets;
+  }
+
+  function setActiveSessionForClient(clientId, preferredSessionId = '') {
+    const sessions = sortSessionsByDateAsc(getTrainingSessionsByClient(clientId));
+    const today = getTodayLocalDate();
+    const preferred = preferredSessionId ? sessions.find((session) => session.id === preferredSessionId) : null;
+    const fromToday = sessions.find((session) => session.date === today && session.status !== 'completed') || null;
+    const fromProgress = sessions.find((session) => session.status === 'in_progress') || null;
+    const fallback = sessions[sessions.length - 1] || null;
+    const active = preferred || fromToday || fromProgress || fallback;
+
+    trainingUi.activeSessionId = active?.id || '';
+    if (active) {
+      normalizeSessionExerciseOrder(active);
+    }
+    const exercises = getSessionExercises(active);
+    trainingUi.activeExerciseId = exercises[0]?.id || '';
+    trainingUi.editingSetNumber = null;
+    trainingUi.editingExerciseId = '';
+    if (els.editingSetNumber) {
+      els.editingSetNumber.value = '';
+    }
+    if (els.exerciseIdInput) {
+      els.exerciseIdInput.value = '';
+    }
+  }
+
+  async function createSessionForClient(clientId) {
+    const title = String(els.routineName?.value || '').trim() || getDefaultSessionTitle(clientId);
+    const date = els.routineDate?.value || getTodayLocalDate();
+    const status = els.sessionStatus?.value || 'planned';
+    const notes = String(els.sessionNotes?.value || '').trim();
+
+    const session = {
+      id: dataApi.createId('tx-session'),
+      clientId,
+      planId: null,
+      groupSessionId: null,
+      date,
+      title,
+      status,
+      notes,
+      exercises: []
+    };
+
+    state.trainingsV08.sessions.push(session);
+    setActiveSessionForClient(clientId, session.id);
+
+    if (isCloudSessionActive()) {
+      const syncResult = await syncSessionToCloud(session);
+      if (!syncResult.ok) {
+        return { ok: false, error: syncResult.error || 'No se pudo crear la sesión en Cloud.' };
+      }
+      return { ok: true, session };
+    }
+
+    persist();
+    return { ok: true, session };
+  }
+
   function sortSessionsByDateAsc(sessions) {
     return sessions.slice().sort((a, b) => {
       const timeA = new Date(`${a.date || '1970-01-01'}T00:00:00`).getTime();
@@ -478,11 +614,19 @@
       return null;
     }
     const today = getTodayLocalDate();
-    const todaySession = sessions.find((session) => session.date === today) || null;
+    const todaySession = sessions.find((session) => session.date === today && session.status !== 'completed') || null;
     if (todaySession) {
       return todaySession;
     }
-    return sessions[sessions.length - 1];
+    const nextUpcoming = sessions.find((session) => session.date && session.date > today && session.status !== 'completed') || null;
+    if (nextUpcoming) {
+      return nextUpcoming;
+    }
+    const inProgress = sessions.find((session) => session.status === 'in_progress') || null;
+    if (inProgress) {
+      return inProgress;
+    }
+    return sessions[sessions.length - 1] || null;
   }
 
   function enterStudentMode(clientId) {
@@ -493,9 +637,13 @@
     }
 
     const session = getStudentSessionForClient(clientId);
+    if (!session) {
+      setClientNotice('Este cliente no tiene sesiones planificadas para entrenar.', 'warn');
+      return;
+    }
     studentUi.enabled = true;
     studentUi.clientId = clientId;
-    studentUi.sessionId = session?.id || '';
+    studentUi.sessionId = session.id;
     studentUi.exerciseIndex = 0;
     studentUi.editingSetNumber = null;
     studentUi.restRemaining = 0;
@@ -640,6 +788,10 @@
       return;
     }
 
+    if (session.status === 'planned') {
+      session.status = 'in_progress';
+    }
+
     const weight = Number(els.studentWeightInput?.value || 0);
     const reps = Number(els.studentRepsInput?.value || 0);
     const completed = els.studentSetCompleted ? els.studentSetCompleted.checked : true;
@@ -693,7 +845,7 @@
       els.studentRepsInput.value = '';
     }
     if (els.studentSetNotice) {
-      els.studentSetNotice.textContent = isPotentialRecord ? '🏆 Posible nuevo récord' : 'Serie guardada';
+      els.studentSetNotice.textContent = isPotentialRecord ? '🏆 Posible nuevo récord' : 'Serie guardada. Inicia descanso.';
     }
 
     const doneSets = sets.filter((setEntry) => setEntry.completed !== false).length;
@@ -1741,15 +1893,8 @@
       : (activeClients[0]?.id || '');
     trainingUi.selectedClientId = selectedClientId;
 
-    const activeSession = getCurrentTrainingSession();
-    if (!activeSession || activeSession.clientId !== selectedClientId) {
-      const candidate = sortSessionsByDateAsc(getTrainingSessionsByClient(selectedClientId)).slice(-1)[0] || null;
-      trainingUi.activeSessionId = candidate?.id || '';
-      trainingUi.activeExerciseId = candidate?.exercises?.[candidate.exercises.length - 1]?.id || '';
-      trainingUi.editingSetNumber = null;
-      if (els.editingSetNumber) {
-        els.editingSetNumber.value = '';
-      }
+    if (!findSessionById(trainingUi.activeSessionId) || findSessionById(trainingUi.activeSessionId)?.clientId !== selectedClientId) {
+      setActiveSessionForClient(selectedClientId);
     }
 
     const clientOptions = activeClients.map((client) => `<option value="${client.id}" ${client.id === selectedClientId ? 'selected' : ''}>${escapeHtml(getClientDisplayName(client))}</option>`).join('');
@@ -1768,6 +1913,37 @@
       els.trainingClientNotice.classList.toggle('hidden', Boolean(activeClients.length));
     }
 
+    const sessions = sortSessionsByDateAsc(getTrainingSessionsByClient(selectedClientId));
+    const activeSession = getCurrentTrainingSession();
+    const currentSession = activeSession && activeSession.clientId === selectedClientId ? activeSession : null;
+    if (!currentSession && selectedClientId) {
+      setActiveSessionForClient(selectedClientId);
+    }
+    const confirmedSession = getCurrentTrainingSession();
+    const selectedSession = confirmedSession && confirmedSession.clientId === selectedClientId ? confirmedSession : null;
+
+    if (els.trainingSessionId) {
+      const sessionOptions = sessions.map((session) => {
+        const dateLabel = session.date ? formatClientDate(session.date) : 'Sin fecha';
+        return `<option value="${session.id}" ${session.id === selectedSession?.id ? 'selected' : ''}>${escapeHtml(dateLabel)} · ${escapeHtml(session.title || 'Sesión')} · ${escapeHtml(getSessionStatusLabel(session.status))}</option>`;
+      }).join('');
+      els.trainingSessionId.innerHTML = sessionOptions || '<option value="">No hay sesiones. Crea una nueva.</option>';
+      els.trainingSessionId.disabled = !sessions.length;
+    }
+
+    if (els.routineDate && (!els.routineDate.value || selectedSession)) {
+      els.routineDate.value = selectedSession?.date || getTodayLocalDate();
+    }
+    if (els.routineName && (!els.routineName.value || selectedSession)) {
+      els.routineName.value = selectedSession?.title || getDefaultSessionTitle(selectedClientId);
+    }
+    if (els.sessionStatus) {
+      els.sessionStatus.value = selectedSession?.status || 'planned';
+    }
+    if (els.sessionNotes) {
+      els.sessionNotes.value = selectedSession?.notes || '';
+    }
+
     const knownExercises = getExerciseOptionsForClient(selectedClientId);
     if (!trainingUi.selectedExercise && knownExercises.length && !els.historyExercise?.value) {
       trainingUi.selectedExercise = knownExercises[0];
@@ -1784,8 +1960,45 @@
       els.trainingProgressSummary.innerHTML = buildProgressSummary(selectedClientId, trainingUi.selectedExercise);
     }
 
+    const activeExercises = getSessionExercises(selectedSession);
+    if (selectedSession) {
+      normalizeSessionExerciseOrder(selectedSession);
+    }
+    if (!activeExercises.some((exercise) => exercise.id === trainingUi.activeExerciseId)) {
+      trainingUi.activeExerciseId = activeExercises[0]?.id || '';
+    }
+
+    const activeExercise = getCurrentTrainingExercise();
+    if (els.coachExerciseList) {
+      els.coachExerciseList.innerHTML = selectedSession
+        ? (activeExercises.length
+          ? activeExercises.map((exercise, index) => `
+            <div class="training-set-item ${exercise.id === activeExercise?.id ? 'is-active' : ''}">
+              <div>
+                <strong>${index + 1}. ${escapeHtml(exercise.exerciseName)}</strong>
+                <div class="meta">${Number(exercise.plannedSets || 0)} × ${Number(exercise.plannedRepMin || 0)}-${Number(exercise.plannedRepMax || 0)} · ${Number(exercise.restSeconds || 0)} s</div>
+                <div class="meta">${Number(exercise.targetWeight || 0) > 0 ? `${Number(exercise.targetWeight || 0)} kg objetivo` : 'Sin peso objetivo'}${exercise.coachNotes ? ` · ${escapeHtml(exercise.coachNotes)}` : ''}</div>
+              </div>
+              <div class="inline-actions">
+                <button class="secondary small" type="button" data-training-select-exercise="${exercise.id}">Usar</button>
+                <button class="ghost small" type="button" data-training-edit-exercise="${exercise.id}">Editar</button>
+                <button class="ghost small" type="button" data-training-move-up="${exercise.id}" ${index === 0 ? 'disabled' : ''}>Subir</button>
+                <button class="ghost small" type="button" data-training-move-down="${exercise.id}" ${index === activeExercises.length - 1 ? 'disabled' : ''}>Bajar</button>
+                <button class="danger small" type="button" data-training-delete-exercise="${exercise.id}">Eliminar</button>
+              </div>
+            </div>`).join('')
+          : '<div class="muted">Agrega ejercicios para esta sesión.</div>')
+        : '<div class="muted">Crea o selecciona una sesión para planificar ejercicios.</div>';
+    }
+
     const currentSession = getCurrentTrainingSession();
     const currentExercise = getCurrentTrainingExercise();
+    if (currentExercise) {
+      trainingUi.selectedExercise = currentExercise.exerciseName;
+      if (els.historyExercise && !els.historyExercise.matches(':focus')) {
+        els.historyExercise.value = currentExercise.exerciseName;
+      }
+    }
     const currentSets = getExerciseSets(currentExercise);
     const plannedSets = Number(currentExercise?.plannedSets || 1);
     const nextSetNumber = trainingUi.editingSetNumber || Math.min(currentSets.length + 1, Math.max(plannedSets, 1));
@@ -1817,47 +2030,33 @@
         : '<div class="muted">Aún no hay series registradas para este ejercicio.</div>';
     }
 
-    const sessionsByClient = activeClients.map((client) => {
-      const sessions = sortSessionsByDateAsc(getTrainingSessionsByClient(client.id));
-      const totalExercises = sessions.reduce((sum, session) => sum + getSessionExercises(session).length, 0);
-      const totalPlannedSets = sessions.reduce((sum, session) => sum + getSessionExercises(session).reduce((acc, exercise) => acc + Number(exercise.plannedSets || 0), 0), 0);
-      const totalCompletedSets = sessions.reduce((sum, session) => sum + getSessionExercises(session).reduce((acc, exercise) => acc + getExerciseSets(exercise).filter((setEntry) => setEntry.completed !== false).length, 0), 0);
-      const completionLabel = totalPlannedSets > 0 ? `${totalCompletedSets}/${totalPlannedSets}` : '0/0';
+    const buckets = getSessionBuckets(selectedClientId);
+    const renderBucket = (title, list) => `
+      <div class="student-card training-summary-grid">
+        <strong>${title}</strong>
+        <div class="routine-list">
+          ${list.length ? list.map((session) => {
+      const doneSets = getSessionExercises(session).reduce((sum, exercise) => sum + getExerciseSets(exercise).filter((setEntry) => setEntry.completed !== false).length, 0);
+      const plannedSetsForSession = getSessionExercises(session).reduce((sum, exercise) => sum + Number(exercise.plannedSets || 0), 0);
+      return `<div class="routine-pill">
+                <div class="section-title">
+                  <strong>${escapeHtml(session.title || 'Sesión')}</strong>
+                  <span class="tag ${getSessionStatusTone(session.status)}">${escapeHtml(getSessionStatusLabel(session.status))}</span>
+                </div>
+                <div class="meta">${escapeHtml(formatClientDate(session.date || getTodayLocalDate()))} · ${getSessionExercises(session).length} ejercicios · ${doneSets}/${plannedSetsForSession || 0} series</div>
+                <div class="inline-actions">
+                  <button class="secondary small" type="button" data-training-open-session="${session.id}">Abrir</button>
+                  <button class="ghost small" type="button" data-training-status="${session.id}" data-next-status="in_progress" ${session.status === 'in_progress' ? 'disabled' : ''}>En progreso</button>
+                  <button class="ghost small" type="button" data-training-status="${session.id}" data-next-status="completed" ${session.status === 'completed' ? 'disabled' : ''}>Completar</button>
+                </div>
+              </div>`;
+    }).join('') : '<div class="muted">Sin sesiones.</div>'}
+        </div>
+      </div>`;
 
-      const byExerciseBest = new Map();
-      sessions.forEach((session) => {
-        getSessionExercises(session).forEach((exercise) => {
-          const currentBest = byExerciseBest.get(exercise.exerciseName) || 0;
-          const localBest = getExerciseSets(exercise).reduce((best, setEntry) => Math.max(best, Number(setEntry.weight || 0)), 0);
-          byExerciseBest.set(exercise.exerciseName, Math.max(currentBest, localBest));
-        });
-      });
-
-      const latestSession = sessions[sessions.length - 1] || null;
-      const latestExercise = latestSession ? getSessionExercises(latestSession)[getSessionExercises(latestSession).length - 1] : null;
-      const latestSet = latestExercise ? getExerciseSets(latestExercise)[getExerciseSets(latestExercise).length - 1] : null;
-
-      const exerciseLines = latestSession
-        ? getSessionExercises(latestSession).map((exercise) => {
-          const doneSets = getExerciseSets(exercise).filter((setEntry) => setEntry.completed !== false).length;
-          const lastSet = getExerciseSets(exercise)[getExerciseSets(exercise).length - 1] || null;
-          const bestWeight = byExerciseBest.get(exercise.exerciseName) || 0;
-          return `<div class="routine-pill"><strong>${escapeHtml(exercise.exerciseName)}</strong><div class="meta">Series ${doneSets}/${Number(exercise.plannedSets || 0)} · Último ${lastSet ? `${Number(lastSet.weight || 0)} kg` : 'Sin registro'} · Mejor ${bestWeight ? `${bestWeight} kg` : 'Sin registro'} · Descanso ${Number(exercise.restSeconds || 0)} s</div></div>`;
-        }).join('')
-        : '<div class="muted">Sin sesiones registradas.</div>';
-
-      return `
-        <div class="student-card training-summary-grid">
-          <strong>${escapeHtml(getClientDisplayName(client))}</strong>
-          <div class="meta">Ejercicios realizados: ${totalExercises}</div>
-          <div class="meta">Series completadas: ${completionLabel}</div>
-          <div class="meta">Último peso: ${latestSet ? `${Number(latestSet.weight || 0)} kg` : 'Sin registro'}</div>
-          <div class="meta">Planificación completada: ${totalPlannedSets > 0 && totalCompletedSets >= totalPlannedSets ? 'Sí' : 'No'}</div>
-          <div class="routine-list">${exerciseLines}</div>
-        </div>`;
-    }).join('');
-
-    els.trainingsStudents.innerHTML = sessionsByClient || '<div class="notice">Primero debes crear un cliente</div>';
+    els.trainingsStudents.innerHTML = activeClients.length
+      ? `${renderBucket('HOY', buckets.today)}${renderBucket('PRÓXIMAS', buckets.upcoming)}${renderBucket('COMPLETADAS', buckets.completed)}`
+      : '<div class="notice">Primero debes crear un cliente</div>';
 
     ensureDateValue(els.routineDate);
     if (els.restPreset && els.restInput && els.restPreset.value !== 'custom') {
@@ -2438,6 +2637,23 @@
       return;
     }
 
+    trainingUi.selectedClientId = clientId;
+
+    let activeSession = findSessionById(payload.sessionId || trainingUi.activeSessionId);
+    if (!activeSession || activeSession.clientId !== clientId) {
+      const createResult = await createSessionForClient(clientId);
+      if (!createResult.ok) {
+        els.routineMessage.textContent = createResult.error || 'No se pudo crear la sesión.';
+        return;
+      }
+      activeSession = createResult.session;
+    }
+
+    activeSession.date = payload.date || getTodayLocalDate();
+    activeSession.title = String(payload.title || '').trim() || getDefaultSessionTitle(clientId);
+    activeSession.status = payload.status || 'planned';
+    activeSession.notes = String(payload.sessionNotes || '').trim();
+
     const exerciseName = String(payload.exerciseName || payload.exercise || '').trim();
     if (!exerciseName) {
       els.routineMessage.textContent = 'Escribe el ejercicio.';
@@ -2452,44 +2668,15 @@
     const restSeconds = payload.restPreset === 'custom'
       ? Math.max(1, parseInt(String(payload.restSeconds || payload.rest || '90').replace(/\D/g, ''), 10) || 90)
       : Math.max(1, Number(payload.restPreset || 90));
-    const sessionDate = payload.date || getTodayLocalDate();
-    const sessionTitle = String(payload.title || payload.name || 'Sesión de entrenamiento').trim();
-    const sessionStatus = payload.status || 'in_progress';
-    const sessionNotes = String(payload.sessionNotes || '').trim();
 
-    const existingByIdentity = (state.trainingsV08.sessions || []).find((session) => (
-      session.clientId === clientId
-      && session.date === sessionDate
-      && String(session.title || '').trim().toLowerCase() === sessionTitle.toLowerCase()
-    )) || null;
-
-    let activeSession = existingByIdentity || getCurrentTrainingSession();
-    if (!activeSession || activeSession.clientId !== clientId) {
-      activeSession = null;
+    const requestedExerciseId = String(payload.exerciseId || trainingUi.editingExerciseId || '').trim();
+    let exercise = requestedExerciseId
+      ? getSessionExercises(activeSession).find((item) => item.id === requestedExerciseId)
+      : null;
+    if (!exercise) {
+      exercise = getSessionExercises(activeSession).find((item) => String(item.exerciseName || '').trim().toLowerCase() === exerciseName.toLowerCase());
     }
 
-    if (!activeSession) {
-      activeSession = {
-        id: dataApi.createId('tx-session'),
-        clientId,
-        planId: null,
-        groupSessionId: null,
-        date: sessionDate,
-        title: sessionTitle || 'Sesión de entrenamiento',
-        status: sessionStatus,
-        notes: sessionNotes,
-        exercises: []
-      };
-      state.trainingsV08.sessions.push(activeSession);
-      trainingUi.activeSessionId = activeSession.id;
-    } else {
-      activeSession.date = sessionDate;
-      activeSession.title = sessionTitle || activeSession.title;
-      activeSession.status = sessionStatus;
-      activeSession.notes = sessionNotes;
-    }
-
-    let exercise = getSessionExercises(activeSession).find((item) => String(item.exerciseName || '').trim().toLowerCase() === exerciseName.toLowerCase());
     if (!exercise) {
       exercise = {
         id: dataApi.createId('tx-exercise'),
@@ -2513,12 +2700,19 @@
       exercise.coachNotes = String(payload.coachNotes || payload.techniqueNotes || '').trim();
     }
 
+    normalizeSessionExerciseOrder(activeSession);
+
     trainingUi.selectedClientId = clientId;
     trainingUi.selectedExercise = exerciseName;
+    trainingUi.activeSessionId = activeSession.id;
     trainingUi.activeExerciseId = exercise.id;
     trainingUi.editingSetNumber = null;
+    trainingUi.editingExerciseId = '';
     if (els.editingSetNumber) {
       els.editingSetNumber.value = '';
+    }
+    if (els.exerciseIdInput) {
+      els.exerciseIdInput.value = '';
     }
     if (els.setWeightInput) {
       const previousSet = getExerciseSets(exercise)[getExerciseSets(exercise).length - 1] || null;
@@ -2540,12 +2734,12 @@
         els.routineMessage.textContent = syncResult.error || 'No se pudo sincronizar la sesión en Cloud.';
         return;
       }
-      els.routineMessage.textContent = 'Ejercicio preparado y sincronizado en Cloud.';
+      els.routineMessage.textContent = requestedExerciseId ? 'Ejercicio actualizado y sincronizado en Cloud.' : 'Ejercicio guardado y sincronizado en Cloud.';
       renderTrainings();
       return;
     }
 
-    els.routineMessage.textContent = 'Ejercicio preparado. Ahora registra serie por serie.';
+    els.routineMessage.textContent = requestedExerciseId ? 'Ejercicio actualizado.' : 'Ejercicio guardado. Ahora registra serie por serie.';
     persist();
   }
 
@@ -2558,6 +2752,10 @@
         els.routineMessage.textContent = 'Primero prepara un ejercicio para la sesión.';
       }
       return;
+    }
+
+    if (session.status === 'planned') {
+      session.status = 'in_progress';
     }
 
     const weight = Number(els.setWeightInput?.value || 0);
@@ -2606,7 +2804,7 @@
       els.setRepsInput.value = '';
     }
     if (els.setRecordNotice) {
-      els.setRecordNotice.textContent = isPotentialPr ? 'Posible nuevo récord' : 'Serie guardada.';
+      els.setRecordNotice.textContent = isPotentialPr ? '🏆 Posible nuevo récord' : 'Serie guardada.';
     }
     if (isCloudSessionActive()) {
       const syncResult = await syncSessionToCloud(session);
@@ -2617,16 +2815,144 @@
         return;
       }
       if (els.routineMessage) {
-        els.routineMessage.textContent = 'Serie guardada y sincronizada en Cloud.';
+        els.routineMessage.textContent = 'Serie guardada y sincronizada en Cloud. Puedes iniciar descanso.';
       }
       renderTrainings();
       return;
     }
 
     if (els.routineMessage) {
-      els.routineMessage.textContent = 'Serie guardada correctamente.';
+      els.routineMessage.textContent = 'Serie guardada correctamente. Puedes iniciar descanso.';
     }
     persist();
+  }
+
+  async function updateSessionStatus(sessionId, nextStatus) {
+    const session = findSessionById(sessionId);
+    if (!session) {
+      return;
+    }
+    session.status = nextStatus;
+    if (isCloudSessionActive()) {
+      const syncResult = await syncSessionToCloud(session);
+      if (!syncResult.ok) {
+        if (els.routineMessage) {
+          els.routineMessage.textContent = syncResult.error || 'No se pudo actualizar el estado en Cloud.';
+        }
+        return;
+      }
+      renderTrainings();
+      return;
+    }
+    persist();
+  }
+
+  async function removeExerciseFromActiveSession(exerciseId) {
+    const session = getCurrentTrainingSession();
+    if (!session) {
+      return;
+    }
+    session.exercises = getSessionExercises(session).filter((exercise) => exercise.id !== exerciseId);
+    normalizeSessionExerciseOrder(session);
+    if (trainingUi.activeExerciseId === exerciseId) {
+      trainingUi.activeExerciseId = getSessionExercises(session)[0]?.id || '';
+    }
+    trainingUi.editingExerciseId = '';
+    if (els.exerciseIdInput) {
+      els.exerciseIdInput.value = '';
+    }
+
+    if (isCloudSessionActive()) {
+      const syncResult = await syncSessionToCloud(session);
+      if (!syncResult.ok) {
+        if (els.routineMessage) {
+          els.routineMessage.textContent = syncResult.error || 'No se pudo eliminar el ejercicio en Cloud.';
+        }
+        return;
+      }
+      renderTrainings();
+      return;
+    }
+
+    persist();
+  }
+
+  async function moveExerciseInSession(exerciseId, direction) {
+    const session = getCurrentTrainingSession();
+    if (!session) {
+      return;
+    }
+    const exercises = getSessionExercises(session);
+    const currentIndex = exercises.findIndex((exercise) => exercise.id === exerciseId);
+    if (currentIndex < 0) {
+      return;
+    }
+    const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (nextIndex < 0 || nextIndex >= exercises.length) {
+      return;
+    }
+    const [item] = exercises.splice(currentIndex, 1);
+    exercises.splice(nextIndex, 0, item);
+    normalizeSessionExerciseOrder(session);
+
+    if (isCloudSessionActive()) {
+      const syncResult = await syncSessionToCloud(session);
+      if (!syncResult.ok) {
+        if (els.routineMessage) {
+          els.routineMessage.textContent = syncResult.error || 'No se pudo reordenar en Cloud.';
+        }
+        return;
+      }
+      renderTrainings();
+      return;
+    }
+
+    persist();
+  }
+
+  function editExerciseFromActiveSession(exerciseId) {
+    const session = getCurrentTrainingSession();
+    if (!session) {
+      return;
+    }
+    const exercise = getSessionExercises(session).find((item) => item.id === exerciseId);
+    if (!exercise) {
+      return;
+    }
+    trainingUi.activeExerciseId = exercise.id;
+    trainingUi.editingExerciseId = exercise.id;
+    if (els.exerciseIdInput) {
+      els.exerciseIdInput.value = exercise.id;
+    }
+    if (els.exerciseInput) {
+      els.exerciseInput.value = exercise.exerciseName || '';
+    }
+    if (els.plannedSetsInput) {
+      els.plannedSetsInput.value = String(Number(exercise.plannedSets || 1));
+    }
+    if (els.plannedRepMinInput) {
+      els.plannedRepMinInput.value = String(Number(exercise.plannedRepMin || 1));
+    }
+    if (els.plannedRepMaxInput) {
+      els.plannedRepMaxInput.value = String(Number(exercise.plannedRepMax || 1));
+    }
+    if (els.targetWeightInput) {
+      els.targetWeightInput.value = String(Number(exercise.targetWeight || 0));
+    }
+    if (els.techniqueNotesInput) {
+      els.techniqueNotesInput.value = exercise.coachNotes || '';
+    }
+    if (els.restInput) {
+      els.restInput.value = String(Number(exercise.restSeconds || 90));
+    }
+    if (els.restPreset) {
+      const allowed = ['60', '90', '95', '120'];
+      const restString = String(Number(exercise.restSeconds || 90));
+      els.restPreset.value = allowed.includes(restString) ? restString : 'custom';
+    }
+    if (els.routineMessage) {
+      els.routineMessage.textContent = `Editando ejercicio: ${exercise.exerciseName}`;
+    }
   }
 
   function handleImport(event) {
@@ -2936,6 +3262,97 @@
       return;
     }
 
+    if (target === els.createSessionBtn) {
+      const clientId = trainingUi.selectedClientId || els.studentId?.value || '';
+      if (!clientId) {
+        if (els.routineMessage) {
+          els.routineMessage.textContent = 'Selecciona un cliente activo para crear sesión.';
+        }
+        return;
+      }
+      createSessionForClient(clientId).then((result) => {
+        if (!result.ok && els.routineMessage) {
+          els.routineMessage.textContent = result.error || 'No se pudo crear la sesión.';
+          return;
+        }
+        if (els.routineMessage) {
+          els.routineMessage.textContent = 'Sesión creada. Ahora agrega ejercicios.';
+        }
+        renderTrainings();
+      }).catch((error) => {
+        if (els.routineMessage) {
+          els.routineMessage.textContent = error?.message || 'No se pudo crear la sesión.';
+        }
+      });
+      return;
+    }
+
+    const openSessionId = target.getAttribute('data-training-open-session');
+    if (openSessionId) {
+      setActiveSessionForClient(trainingUi.selectedClientId, openSessionId);
+      renderTrainings();
+      return;
+    }
+
+    const nextStatus = target.getAttribute('data-next-status');
+    const statusSessionId = target.getAttribute('data-training-status');
+    if (statusSessionId && nextStatus) {
+      updateSessionStatus(statusSessionId, nextStatus).catch((error) => {
+        if (els.routineMessage) {
+          els.routineMessage.textContent = error?.message || 'No se pudo actualizar el estado de la sesión.';
+        }
+      });
+      return;
+    }
+
+    const selectExerciseId = target.getAttribute('data-training-select-exercise');
+    if (selectExerciseId) {
+      trainingUi.activeExerciseId = selectExerciseId;
+      trainingUi.editingSetNumber = null;
+      if (els.editingSetNumber) {
+        els.editingSetNumber.value = '';
+      }
+      renderTrainings();
+      return;
+    }
+
+    const editExerciseId = target.getAttribute('data-training-edit-exercise');
+    if (editExerciseId) {
+      editExerciseFromActiveSession(editExerciseId);
+      renderTrainings();
+      return;
+    }
+
+    const moveUpExerciseId = target.getAttribute('data-training-move-up');
+    if (moveUpExerciseId) {
+      moveExerciseInSession(moveUpExerciseId, 'up').catch((error) => {
+        if (els.routineMessage) {
+          els.routineMessage.textContent = error?.message || 'No se pudo mover el ejercicio.';
+        }
+      });
+      return;
+    }
+
+    const moveDownExerciseId = target.getAttribute('data-training-move-down');
+    if (moveDownExerciseId) {
+      moveExerciseInSession(moveDownExerciseId, 'down').catch((error) => {
+        if (els.routineMessage) {
+          els.routineMessage.textContent = error?.message || 'No se pudo mover el ejercicio.';
+        }
+      });
+      return;
+    }
+
+    const deleteExerciseId = target.getAttribute('data-training-delete-exercise');
+    if (deleteExerciseId) {
+      removeExerciseFromActiveSession(deleteExerciseId).catch((error) => {
+        if (els.routineMessage) {
+          els.routineMessage.textContent = error?.message || 'No se pudo eliminar el ejercicio.';
+        }
+      });
+      return;
+    }
+
     const setEditNumber = target.getAttribute('data-set-edit');
     if (setEditNumber) {
       const exercise = getCurrentTrainingExercise();
@@ -3156,7 +3573,7 @@
       return;
     }
     if (preset === 'custom') {
-      if (!els.restInput.value || ['60', '90', '95'].includes(String(els.restInput.value))) {
+      if (!els.restInput.value || ['60', '90', '95', '120'].includes(String(els.restInput.value))) {
         els.restInput.value = '';
       }
       els.restInput.focus();
@@ -3166,19 +3583,30 @@
   });
   els.studentId?.addEventListener('change', (event) => {
     trainingUi.selectedClientId = event.target.value || '';
-    trainingUi.activeSessionId = '';
-    trainingUi.activeExerciseId = '';
-    trainingUi.editingSetNumber = null;
+    setActiveSessionForClient(trainingUi.selectedClientId);
     if (els.historyClientId) {
       els.historyClientId.value = trainingUi.selectedClientId;
     }
     renderTrainings();
   });
+  els.trainingSessionId?.addEventListener('change', (event) => {
+    const sessionId = event.target.value || '';
+    if (!sessionId) {
+      trainingUi.activeSessionId = '';
+      trainingUi.activeExerciseId = '';
+      trainingUi.editingExerciseId = '';
+      if (els.exerciseIdInput) {
+        els.exerciseIdInput.value = '';
+      }
+      renderTrainings();
+      return;
+    }
+    setActiveSessionForClient(trainingUi.selectedClientId, sessionId);
+    renderTrainings();
+  });
   els.historyClientId?.addEventListener('change', (event) => {
     trainingUi.selectedClientId = event.target.value || '';
-    trainingUi.activeSessionId = '';
-    trainingUi.activeExerciseId = '';
-    trainingUi.editingSetNumber = null;
+    setActiveSessionForClient(trainingUi.selectedClientId);
     renderTrainings();
   });
   els.historyExercise?.addEventListener('input', (event) => {

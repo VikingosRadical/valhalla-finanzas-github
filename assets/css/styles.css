@@ -603,6 +603,11 @@ button.small {
   gap: 10px;
 }
 
+.training-set-item.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(255, 196, 0, 0.3) inset;
+}
+
 .training-set-item strong {
   display: block;
 }
@@ -680,6 +685,19 @@ button.small {
   margin-top: 10px;
   display: grid;
   gap: 8px;
+}
+
+#trainingSessionId,
+#createSessionBtn {
+  min-height: 50px;
+}
+
+#coachExerciseList .inline-actions {
+  justify-content: flex-start;
+}
+
+#coachExerciseList .inline-actions button {
+  min-height: 48px;
 }
 
 .routine-pill {

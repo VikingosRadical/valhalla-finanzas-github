@@ -324,15 +324,24 @@
               <div id="trainingClientNotice" class="notice"></div>
             </div>
             <div>
+              <label for="trainingSessionId">Sesión activa</label>
+              <select id="trainingSessionId" name="sessionId"></select>
+            </div>
+          </div>
+          <div class="inline-actions">
+            <button class="secondary" id="createSessionBtn" type="button">Nueva sesión</button>
+          </div>
+          <div class="row">
+            <div>
               <label for="routineName">Título de sesión</label>
               <input id="routineName" name="title" placeholder="Sesión Fuerza Tren Inferior" required>
             </div>
-          </div>
-          <div class="row">
             <div>
               <label for="routineDate">Fecha</label>
               <input id="routineDate" name="date" type="date" required>
             </div>
+          </div>
+          <div class="row">
             <div>
               <label for="sessionStatus">Estado de sesión</label>
               <select id="sessionStatus" name="status">
@@ -350,6 +359,7 @@
             <div>
               <label for="exercise">Ejercicio</label>
               <input id="exercise" name="exerciseName" placeholder="Sentadilla Smith" required>
+              <input id="exerciseId" name="exerciseId" type="hidden" value="">
             </div>
             <div>
               <label for="techniqueNotes">Notas del entrenador para este ejercicio</label>
@@ -372,7 +382,7 @@
           <div class="row">
             <div>
               <label for="weight">Peso objetivo</label>
-              <input id="weight" name="targetWeight" type="number" min="0" step="0.1" required>
+              <input id="weight" name="targetWeight" type="number" min="0" step="0.1" placeholder="Opcional">
             </div>
             <div>
               <label for="restPreset">Descanso rápido</label>
@@ -380,6 +390,7 @@
                 <option value="60">60 segundos</option>
                 <option value="90" selected>90 segundos</option>
                 <option value="95">95 segundos</option>
+                <option value="120">120 segundos</option>
                 <option value="custom">Personalizado</option>
               </select>
             </div>
@@ -388,9 +399,14 @@
             <label for="rest">Descanso (segundos)</label>
             <input id="rest" name="restSeconds" placeholder="90" required>
           </div>
-          <button class="primary" type="submit">Preparar ejercicio</button>
+          <button class="primary" type="submit">Guardar ejercicio en sesión</button>
           <div id="routineMessage" class="notice"></div>
         </form>
+      </div>
+
+      <div class="card">
+        <h2>Ejercicios de la sesión activa</h2>
+        <div id="coachExerciseList" class="training-set-list"></div>
       </div>
 
       <div class="card training-live-card">
@@ -437,7 +453,7 @@
         <div id="trainingProgressSummary" class="notice"></div>
       </div>
       <div class="card">
-        <h2>Resumen del entrenador</h2>
+        <h2>Sesiones del cliente</h2>
         <div id="trainingsStudents"></div>
       </div>
     </section>

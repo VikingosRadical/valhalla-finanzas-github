@@ -432,6 +432,19 @@
       return sessionResult;
     }
 
+    const ownerContext = await getOwnerContext();
+    if (ownerContext.error) {
+      return { data: null, error: ownerContext.error };
+    }
+
+    const client = getSupabaseClient();
+    if (!client) {
+      return { data: null, error: 'Supabase SDK no disponible' };
+    }
+
+    const incomingExerciseIds = new Set(normalizedSession.exercises.map((exercise) => String(exercise.id)));
+    const incomingSetIds = new Set();
+
     for (let exerciseIndex = 0; exerciseIndex < normalizedSession.exercises.length; exerciseIndex += 1) {
       const exercise = normalizeTrainingExercise(normalizedSession.exercises[exerciseIndex], exerciseIndex);
       const exerciseResult = await upsertTrainingExercise(normalizedSession, exercise);
@@ -440,10 +453,61 @@
       }
       for (let setIndex = 0; setIndex < exercise.sets.length; setIndex += 1) {
         const setEntry = normalizeTrainingSet(exercise.sets[setIndex], setIndex);
+        incomingSetIds.add(String(setEntry?.id || `${exercise.id}::${setEntry.setNumber}`));
         const setResult = await upsertTrainingSet(normalizedSession, exercise, setEntry);
         if (setResult.error) {
           return setResult;
         }
+      }
+    }
+
+    const { data: existingExercises, error: existingExercisesError } = await client
+      .from('training_exercises')
+      .select('id')
+      .eq('owner_id', ownerContext.ownerId)
+      .eq('session_id', normalizedSession.id);
+
+    if (existingExercisesError) {
+      return { data: null, error: existingExercisesError };
+    }
+
+    const staleExerciseIds = (existingExercises || [])
+      .map((row) => String(row.id))
+      .filter((exerciseId) => !incomingExerciseIds.has(exerciseId));
+
+    if (staleExerciseIds.length) {
+      const { error: deleteExercisesError } = await client
+        .from('training_exercises')
+        .delete()
+        .eq('owner_id', ownerContext.ownerId)
+        .in('id', staleExerciseIds);
+      if (deleteExercisesError) {
+        return { data: null, error: deleteExercisesError };
+      }
+    }
+
+    const { data: existingSets, error: existingSetsError } = await client
+      .from('training_sets')
+      .select('id')
+      .eq('owner_id', ownerContext.ownerId)
+      .eq('session_id', normalizedSession.id);
+
+    if (existingSetsError) {
+      return { data: null, error: existingSetsError };
+    }
+
+    const staleSetIds = (existingSets || [])
+      .map((row) => String(row.id))
+      .filter((setId) => !incomingSetIds.has(setId));
+
+    if (staleSetIds.length) {
+      const { error: deleteSetsError } = await client
+        .from('training_sets')
+        .delete()
+        .eq('owner_id', ownerContext.ownerId)
+        .in('id', staleSetIds);
+      if (deleteSetsError) {
+        return { data: null, error: deleteSetsError };
       }
     }
 

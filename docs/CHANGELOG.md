@@ -123,6 +123,23 @@
 - Se reforzó el indicador operativo en interfaz para mostrar `Modo Cloud` cuando existe sesión cloud y `Modo Local` en fallback.
 - Se añadió preparación explícita de función manual futura `Subir datos locales a Cloud` sin ejecución automática.
 
+## VALHALLA v0.8 — Sprint Coach -> Alumno -> Registro Cloud - 2026-08-07
+
+### Nuevas capacidades
+
+- Se implementó planificación explícita de sesión por cliente activo con acción `Nueva sesión` y selección de sesión activa.
+- Se añadió gestión completa de ejercicios dentro de la sesión: agregar, editar, eliminar y reordenar (`Subir`/`Bajar`).
+- Se habilitó visualización de sesiones del cliente por estado operativo: `HOY`, `PRÓXIMAS` y `COMPLETADAS`.
+- Se mantuvo la vista alumno de prueba y se reforzó el flujo serie por serie con persistencia inmediata en Cloud cuando existe sesión autenticada.
+- Se incorporó continuidad del estado de sesión (`planned` -> `in_progress` -> `completed`) durante ejecución real.
+- Se mantuvo detección de `🏆 Posible nuevo récord` sin validación oficial automática.
+- Se mejoró el fallback local para que la misma UI funcione sin sesión Cloud.
+
+### Sincronización Cloud
+
+- La sincronización profunda de sesiones ahora refleja también eliminaciones y reordenamientos de ejercicios/series para evitar desalineación con Supabase.
+- Se conservan las tablas existentes (`training_plans`, `training_sessions`, `training_exercises`, `training_sets`) sin cambios de esquema.
+
 ### Seguridad
 
 - Se preparó el esquema SQL con RLS para que admin gestione sus propios datos por `owner_id`.
