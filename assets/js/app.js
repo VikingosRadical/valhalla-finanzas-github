@@ -16,7 +16,9 @@
     activeSessionId: '',
     activeExerciseId: '',
     editingSetNumber: null,
-    editingExerciseId: ''
+    editingExerciseId: '',
+    editingTemplateId: '',
+    editingTemplateExerciseId: ''
   };
   const studentUi = {
     enabled: false,
@@ -98,8 +100,12 @@
     routineMessage: document.getElementById('routineMessage'),
     trainingClientNotice: document.getElementById('trainingClientNotice'),
     studentId: document.getElementById('studentId'),
+    sessionCreateMode: document.getElementById('sessionCreateMode'),
+    sessionTemplateId: document.getElementById('sessionTemplateId'),
     trainingSessionId: document.getElementById('trainingSessionId'),
     createSessionBtn: document.getElementById('createSessionBtn'),
+    duplicateSessionBtn: document.getElementById('duplicateSessionBtn'),
+    saveAsTemplateBtn: document.getElementById('saveAsTemplateBtn'),
     coachExerciseList: document.getElementById('coachExerciseList'),
     restPreset: document.getElementById('restPreset'),
     restInput: document.getElementById('rest'),
@@ -160,6 +166,27 @@
     studentSessionFinishPanel: document.getElementById('studentSessionFinishPanel'),
     studentSessionSummary: document.getElementById('studentSessionSummary'),
     studentFinalizeBtn: document.getElementById('studentFinalizeBtn'),
+    templateForm: document.getElementById('templateForm'),
+    templateIdInput: document.getElementById('templateId'),
+    templateNameInput: document.getElementById('templateName'),
+    templateNotesInput: document.getElementById('templateNotes'),
+    templateAssignDateInput: document.getElementById('templateAssignDate'),
+    saveTemplateBtn: document.getElementById('saveTemplateBtn'),
+    assignTemplateBtn: document.getElementById('assignTemplateBtn'),
+    newTemplateBtn: document.getElementById('newTemplateBtn'),
+    templateMessage: document.getElementById('templateMessage'),
+    templateExerciseForm: document.getElementById('templateExerciseForm'),
+    templateExerciseIdInput: document.getElementById('templateExerciseId'),
+    templateExerciseNameInput: document.getElementById('templateExerciseName'),
+    templateExerciseNotesInput: document.getElementById('templateExerciseNotes'),
+    templateExerciseSetsInput: document.getElementById('templateExerciseSets'),
+    templateExerciseRepMinInput: document.getElementById('templateExerciseRepMin'),
+    templateExerciseRepMaxInput: document.getElementById('templateExerciseRepMax'),
+    templateExerciseWeightInput: document.getElementById('templateExerciseWeight'),
+    templateExerciseRestInput: document.getElementById('templateExerciseRest'),
+    saveTemplateExerciseBtn: document.getElementById('saveTemplateExerciseBtn'),
+    templateExerciseList: document.getElementById('templateExerciseList'),
+    templateList: document.getElementById('templateList'),
     reserve: document.getElementById('reserve'),
     magicBudget: document.getElementById('magicBudget'),
     antBudget: document.getElementById('antBudget'),
@@ -328,6 +355,125 @@
     return (state.trainingsV08.sessions || []).filter((session) => session.clientId === clientId);
   }
 
+  function createTemplateExerciseFromSource(exercise, index) {
+    return {
+      id: String(exercise?.id || dataApi.createId('tpl-exercise')),
+      exerciseName: String(exercise?.exerciseName || 'Ejercicio'),
+      order: Number(exercise?.order || index + 1),
+      plannedSets: Math.max(1, Number(exercise?.plannedSets || 1)),
+      plannedRepMin: Math.max(1, Number(exercise?.plannedRepMin || 1)),
+      plannedRepMax: Math.max(Number(exercise?.plannedRepMin || 1), Number(exercise?.plannedRepMax || exercise?.plannedRepMin || 1)),
+      targetWeight: Math.max(0, Number(exercise?.targetWeight || 0)),
+      restSeconds: Math.max(1, Number(exercise?.restSeconds || 90)),
+      coachNotes: String(exercise?.coachNotes || '')
+    };
+  }
+
+  function normalizeTemplateExercises(exercises) {
+    const list = Array.isArray(exercises) ? exercises : [];
+    return list.map((exercise, index) => createTemplateExerciseFromSource(exercise, index)).sort((a, b) => Number(a.order || 0) - Number(b.order || 0)).map((exercise, index) => ({
+      ...exercise,
+      order: index + 1
+    }));
+  }
+
+  function parseTemplateNotes(rawNotes) {
+    if (!rawNotes) {
+      return { notes: '', exercises: [] };
+    }
+    const value = String(rawNotes || '').trim();
+    if (!value) {
+      return { notes: '', exercises: [] };
+    }
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object' && Array.isArray(parsed.exercises)) {
+        return {
+          notes: String(parsed.notes || ''),
+          exercises: normalizeTemplateExercises(parsed.exercises)
+        };
+      }
+    } catch (_) {
+      // Keep backward compatibility with plain text notes.
+    }
+    return { notes: value, exercises: [] };
+  }
+
+  function serializeTemplateNotes(template) {
+    const payload = {
+      notes: String(template?.notes || ''),
+      exercises: normalizeTemplateExercises(template?.exercises || []).map((exercise) => ({
+        exerciseName: exercise.exerciseName,
+        order: exercise.order,
+        plannedSets: exercise.plannedSets,
+        plannedRepMin: exercise.plannedRepMin,
+        plannedRepMax: exercise.plannedRepMax,
+        targetWeight: exercise.targetWeight,
+        restSeconds: exercise.restSeconds,
+        coachNotes: exercise.coachNotes || ''
+      }))
+    };
+    return JSON.stringify(payload);
+  }
+
+  function normalizeTrainingPlan(plan, index = 0) {
+    const parsedNotes = parseTemplateNotes(plan?.notes);
+    const fallbackName = `Plantilla ${index + 1}`;
+    return {
+      id: String(plan?.id || dataApi.createId('tx-plan')),
+      clientId: String(plan?.clientId || plan?.client_id || ''),
+      name: String(plan?.name || fallbackName),
+      notes: parsedNotes.notes,
+      active: plan?.active !== false,
+      exercises: parsedNotes.exercises
+    };
+  }
+
+  function getTemplateById(templateId) {
+    ensureTrainingsV08State();
+    return (state.trainingsV08.plans || []).find((template) => template.id === templateId) || null;
+  }
+
+  function cloneSessionFromTemplate(template, clientId, sessionDate) {
+    const exercises = normalizeTemplateExercises(template.exercises || []).map((exercise, index) => ({
+      ...createTemplateExerciseFromSource(exercise, index),
+      id: dataApi.createId('tx-exercise'),
+      sets: []
+    }));
+
+    return {
+      id: dataApi.createId('tx-session'),
+      clientId,
+      planId: template.id,
+      groupSessionId: null,
+      date: sessionDate || getTodayLocalDate(),
+      title: template.name || 'Sesión desde plantilla',
+      status: 'planned',
+      notes: template.notes || '',
+      exercises
+    };
+  }
+
+  function cloneSessionPlanning(session, sessionDate) {
+    const exercises = getSessionExercises(session).map((exercise, index) => ({
+      ...createTemplateExerciseFromSource(exercise, index),
+      id: dataApi.createId('tx-exercise'),
+      sets: []
+    }));
+
+    return {
+      id: dataApi.createId('tx-session'),
+      clientId: session.clientId,
+      planId: session.planId || null,
+      groupSessionId: session.groupSessionId || null,
+      date: sessionDate || getTodayLocalDate(),
+      title: session.title || 'Sesión duplicada',
+      status: 'planned',
+      notes: session.notes || '',
+      exercises
+    };
+  }
+
   function getSessionStatusLabel(status) {
     const labels = {
       planned: 'Planificada',
@@ -417,23 +563,32 @@
     }
   }
 
-  async function createSessionForClient(clientId) {
-    const title = String(els.routineName?.value || '').trim() || getDefaultSessionTitle(clientId);
-    const date = els.routineDate?.value || getTodayLocalDate();
-    const status = els.sessionStatus?.value || 'planned';
-    const notes = String(els.sessionNotes?.value || '').trim();
+  async function createSessionForClient(clientId, options = {}) {
+    const templateId = options.templateId || '';
+    const template = templateId ? getTemplateById(templateId) : null;
+    const date = options.date || els.routineDate?.value || getTodayLocalDate();
+    const status = options.status || els.sessionStatus?.value || 'planned';
+    const notes = options.notes !== undefined ? String(options.notes || '').trim() : String(els.sessionNotes?.value || '').trim();
+    const title = String(options.title || els.routineName?.value || '').trim() || getDefaultSessionTitle(clientId);
 
-    const session = {
-      id: dataApi.createId('tx-session'),
-      clientId,
-      planId: null,
-      groupSessionId: null,
-      date,
-      title,
-      status,
-      notes,
-      exercises: []
-    };
+    const session = template
+      ? cloneSessionFromTemplate(template, clientId, date)
+      : {
+        id: dataApi.createId('tx-session'),
+        clientId,
+        planId: null,
+        groupSessionId: null,
+        date,
+        title,
+        status,
+        notes,
+        exercises: []
+      };
+
+    session.date = date;
+    session.status = status;
+    session.notes = notes || session.notes || '';
+    session.title = title || session.title || getDefaultSessionTitle(clientId);
 
     state.trainingsV08.sessions.push(session);
     setActiveSessionForClient(clientId, session.id);
@@ -448,6 +603,553 @@
 
     persist();
     return { ok: true, session };
+  }
+
+  function setTemplateMessage(message, tone = 'neutral') {
+    if (!els.templateMessage) {
+      return;
+    }
+    els.templateMessage.textContent = message;
+    els.templateMessage.classList.toggle('ok', tone === 'ok');
+    els.templateMessage.classList.toggle('bad', tone === 'bad');
+    els.templateMessage.classList.toggle('warn', tone === 'warn');
+    els.templateMessage.classList.toggle('muted', tone === 'neutral');
+  }
+
+  function clearTemplateExerciseForm() {
+    trainingUi.editingTemplateExerciseId = '';
+    if (els.templateExerciseIdInput) {
+      els.templateExerciseIdInput.value = '';
+    }
+    if (els.templateExerciseNameInput) {
+      els.templateExerciseNameInput.value = '';
+    }
+    if (els.templateExerciseNotesInput) {
+      els.templateExerciseNotesInput.value = '';
+    }
+    if (els.templateExerciseSetsInput) {
+      els.templateExerciseSetsInput.value = '4';
+    }
+    if (els.templateExerciseRepMinInput) {
+      els.templateExerciseRepMinInput.value = '8';
+    }
+    if (els.templateExerciseRepMaxInput) {
+      els.templateExerciseRepMaxInput.value = '10';
+    }
+    if (els.templateExerciseWeightInput) {
+      els.templateExerciseWeightInput.value = '';
+    }
+    if (els.templateExerciseRestInput) {
+      els.templateExerciseRestInput.value = '90';
+    }
+  }
+
+  function resetTemplateDraft() {
+    trainingUi.editingTemplateId = '';
+    if (els.templateIdInput) {
+      els.templateIdInput.value = '';
+    }
+    if (els.templateNameInput) {
+      els.templateNameInput.value = '';
+    }
+    if (els.templateNotesInput) {
+      els.templateNotesInput.value = '';
+    }
+    clearTemplateExerciseForm();
+  }
+
+  function getTemplateDraftExercises() {
+    const template = trainingUi.editingTemplateId ? getTemplateById(trainingUi.editingTemplateId) : null;
+    return normalizeTemplateExercises(template?.exercises || []);
+  }
+
+  function buildTemplatePayload(baseTemplate = null) {
+    const name = String(els.templateNameInput?.value || '').trim();
+    const notes = String(els.templateNotesInput?.value || '').trim();
+    const existingExercises = getTemplateDraftExercises();
+    return normalizeTrainingPlan({
+      id: baseTemplate?.id || trainingUi.editingTemplateId || dataApi.createId('tx-plan'),
+      clientId: baseTemplate?.clientId || trainingUi.selectedClientId || state.clients[0]?.id || '',
+      name,
+      notes,
+      active: true,
+      exercises: existingExercises
+    });
+  }
+
+  async function persistTemplateToCloud(template) {
+    if (!isCloudSessionActive() || !cloudDataApi || typeof cloudDataApi.upsertTrainingPlan !== 'function') {
+      return { ok: false, error: 'Modo local' };
+    }
+    const response = await cloudDataApi.upsertTrainingPlan({
+      id: template.id,
+      client_id: template.clientId,
+      name: template.name,
+      notes: serializeTemplateNotes(template),
+      active: template.active !== false
+    });
+    if (response && response.error) {
+      return { ok: false, error: response.error.message || response.error };
+    }
+    return { ok: true, data: response?.data || null };
+  }
+
+  async function removeTemplateFromCloud(templateId) {
+    if (!isCloudSessionActive() || !cloudDataApi || typeof cloudDataApi.deleteTrainingPlan !== 'function') {
+      return { ok: false, error: 'Modo local' };
+    }
+    const response = await cloudDataApi.deleteTrainingPlan(templateId);
+    if (response && response.error) {
+      return { ok: false, error: response.error.message || response.error };
+    }
+    return { ok: true };
+  }
+
+  function renderTemplateExercises(template) {
+    if (!els.templateExerciseList) {
+      return;
+    }
+    const exercises = normalizeTemplateExercises(template?.exercises || []);
+    els.templateExerciseList.innerHTML = exercises.length
+      ? exercises.map((exercise, index) => `
+        <div class="training-set-item">
+          <div>
+            <strong>${index + 1}. ${escapeHtml(exercise.exerciseName)}</strong>
+            <div class="meta">${Number(exercise.plannedSets || 0)} × ${Number(exercise.plannedRepMin || 0)}-${Number(exercise.plannedRepMax || 0)} · ${Number(exercise.restSeconds || 0)} s · ${Number(exercise.targetWeight || 0) > 0 ? `${Number(exercise.targetWeight || 0)} kg` : 'Sin peso objetivo'}</div>
+            <div class="meta">${escapeHtml(exercise.coachNotes || '')}</div>
+          </div>
+          <div class="inline-actions">
+            <button class="ghost small" type="button" data-template-exercise-edit="${exercise.id}">Editar</button>
+            <button class="ghost small" type="button" data-template-exercise-up="${exercise.id}" ${index === 0 ? 'disabled' : ''}>Subir</button>
+            <button class="ghost small" type="button" data-template-exercise-down="${exercise.id}" ${index === exercises.length - 1 ? 'disabled' : ''}>Bajar</button>
+            <button class="danger small" type="button" data-template-exercise-delete="${exercise.id}">Eliminar</button>
+          </div>
+        </div>`).join('')
+      : '<div class="muted">La plantilla no tiene ejercicios todavía.</div>';
+  }
+
+  function renderTemplateList() {
+    if (!els.templateList) {
+      return;
+    }
+    const templates = (state.trainingsV08.plans || []).map((template, index) => normalizeTrainingPlan(template, index));
+    const selectedTemplateId = trainingUi.editingTemplateId;
+    const selectedClientId = trainingUi.selectedClientId;
+    if (els.sessionTemplateId) {
+      els.sessionTemplateId.innerHTML = templates.length
+        ? templates.map((template) => `<option value="${template.id}">${escapeHtml(template.name)} · ${template.exercises.length} ejercicios</option>`).join('')
+        : '<option value="">No hay plantillas</option>';
+      els.sessionTemplateId.disabled = !templates.length;
+    }
+
+    els.templateList.innerHTML = templates.length
+      ? templates.map((template) => `
+        <div class="training-set-item ${template.id === selectedTemplateId ? 'is-active' : ''}">
+          <div>
+            <strong>${escapeHtml(template.name)}</strong>
+            <div class="meta">${template.exercises.length} ejercicios</div>
+            <div class="meta">${escapeHtml(template.notes || '')}</div>
+          </div>
+          <div class="inline-actions">
+            <button class="secondary small" type="button" data-template-use="${template.id}">USAR</button>
+            <button class="ghost small" type="button" data-template-edit="${template.id}">EDITAR</button>
+            <button class="ghost small" type="button" data-template-duplicate="${template.id}">DUPLICAR</button>
+            <button class="danger small" type="button" data-template-delete="${template.id}">ELIMINAR</button>
+          </div>
+        </div>`).join('')
+      : '<div class="muted">No hay plantillas guardadas.</div>';
+
+    const template = selectedTemplateId ? getTemplateById(selectedTemplateId) : null;
+    renderTemplateExercises(template);
+
+    if (els.templateAssignDateInput && !els.templateAssignDateInput.value) {
+      els.templateAssignDateInput.value = getTodayLocalDate();
+    }
+    if (els.assignTemplateBtn) {
+      const canAssign = Boolean(template && selectedClientId);
+      els.assignTemplateBtn.disabled = !canAssign;
+    }
+  }
+
+  function loadTemplateIntoForm(templateId) {
+    const template = getTemplateById(templateId);
+    if (!template) {
+      return;
+    }
+    trainingUi.editingTemplateId = template.id;
+    if (els.templateIdInput) {
+      els.templateIdInput.value = template.id;
+    }
+    if (els.templateNameInput) {
+      els.templateNameInput.value = template.name || '';
+    }
+    if (els.templateNotesInput) {
+      els.templateNotesInput.value = template.notes || '';
+    }
+    clearTemplateExerciseForm();
+    setTemplateMessage(`Editando plantilla: ${template.name}`, 'neutral');
+  }
+
+  async function saveTemplate() {
+    const name = String(els.templateNameInput?.value || '').trim();
+    if (!name) {
+      setTemplateMessage('Ingresa un nombre para la plantilla.', 'bad');
+      return;
+    }
+
+    const baseTemplate = trainingUi.editingTemplateId ? getTemplateById(trainingUi.editingTemplateId) : null;
+    const template = buildTemplatePayload(baseTemplate);
+    const templates = (state.trainingsV08.plans || []).filter((item) => item.id !== template.id);
+    templates.unshift(template);
+    state.trainingsV08.plans = templates;
+
+    if (isCloudSessionActive()) {
+      const cloudResult = await persistTemplateToCloud(template);
+      if (!cloudResult.ok) {
+        setTemplateMessage(cloudResult.error || 'No se pudo guardar plantilla en Cloud.', 'bad');
+        return;
+      }
+      await refreshTrainingsV08FromCloud();
+    } else {
+      persist();
+    }
+
+    trainingUi.editingTemplateId = template.id;
+    if (els.templateIdInput) {
+      els.templateIdInput.value = template.id;
+    }
+    setTemplateMessage('Plantilla guardada correctamente.', 'ok');
+    renderTemplateList();
+  }
+
+  async function saveTemplateExercise() {
+    if (!trainingUi.editingTemplateId) {
+      setTemplateMessage('Primero selecciona o crea una plantilla.', 'warn');
+      return;
+    }
+    const template = getTemplateById(trainingUi.editingTemplateId);
+    if (!template) {
+      setTemplateMessage('Plantilla no encontrada.', 'bad');
+      return;
+    }
+
+    const exerciseName = String(els.templateExerciseNameInput?.value || '').trim();
+    if (!exerciseName) {
+      setTemplateMessage('Ingresa nombre del ejercicio.', 'bad');
+      return;
+    }
+
+    const exerciseId = String(els.templateExerciseIdInput?.value || trainingUi.editingTemplateExerciseId || '').trim();
+    const plannedSets = Math.max(1, Number(els.templateExerciseSetsInput?.value || 1));
+    const plannedRepMin = Math.max(1, Number(els.templateExerciseRepMinInput?.value || 1));
+    const plannedRepMax = Math.max(plannedRepMin, Number(els.templateExerciseRepMaxInput?.value || plannedRepMin));
+    const targetWeight = Math.max(0, Number(els.templateExerciseWeightInput?.value || 0));
+    const restSeconds = Math.max(1, Number(els.templateExerciseRestInput?.value || 90));
+    const coachNotes = String(els.templateExerciseNotesInput?.value || '').trim();
+
+    const exercises = normalizeTemplateExercises(template.exercises || []);
+    const existing = exerciseId ? exercises.find((item) => item.id === exerciseId) : null;
+    if (existing) {
+      existing.exerciseName = exerciseName;
+      existing.plannedSets = plannedSets;
+      existing.plannedRepMin = plannedRepMin;
+      existing.plannedRepMax = plannedRepMax;
+      existing.targetWeight = targetWeight;
+      existing.restSeconds = restSeconds;
+      existing.coachNotes = coachNotes;
+    } else {
+      exercises.push(createTemplateExerciseFromSource({
+        id: dataApi.createId('tpl-exercise'),
+        exerciseName,
+        plannedSets,
+        plannedRepMin,
+        plannedRepMax,
+        targetWeight,
+        restSeconds,
+        coachNotes,
+        order: exercises.length + 1
+      }, exercises.length));
+    }
+
+    template.exercises = normalizeTemplateExercises(exercises);
+    clearTemplateExerciseForm();
+
+    if (isCloudSessionActive()) {
+      const cloudResult = await persistTemplateToCloud(template);
+      if (!cloudResult.ok) {
+        setTemplateMessage(cloudResult.error || 'No se pudo sincronizar ejercicio de plantilla.', 'bad');
+        return;
+      }
+    }
+
+    if (!isCloudSessionActive()) {
+      persist();
+    } else {
+      render();
+    }
+    setTemplateMessage('Ejercicio de plantilla guardado.', 'ok');
+    renderTemplateList();
+  }
+
+  async function assignTemplateToSelectedClient(templateId) {
+    const clientId = trainingUi.selectedClientId || '';
+    if (!clientId) {
+      setTemplateMessage('Selecciona un cliente activo para asignar plantilla.', 'warn');
+      return;
+    }
+    const template = getTemplateById(templateId || trainingUi.editingTemplateId);
+    if (!template) {
+      setTemplateMessage('Selecciona una plantilla para asignar.', 'warn');
+      return;
+    }
+
+    const date = els.templateAssignDateInput?.value || els.routineDate?.value || getTodayLocalDate();
+    const session = cloneSessionFromTemplate(template, clientId, date);
+    state.trainingsV08.sessions.push(session);
+    setActiveSessionForClient(clientId, session.id);
+
+    if (isCloudSessionActive()) {
+      const syncResult = await syncSessionToCloud(session);
+      if (!syncResult.ok) {
+        setTemplateMessage(syncResult.error || 'No se pudo crear sesión desde plantilla en Cloud.', 'bad');
+        return;
+      }
+      await refreshTrainingsV08FromCloud();
+      setTemplateMessage('Plantilla asignada. Sesión creada en Cloud.', 'ok');
+      return;
+    }
+
+    persist();
+    setTemplateMessage('Plantilla asignada. Sesión creada.', 'ok');
+  }
+
+  async function duplicateSessionForSelectedClient() {
+    const sourceSession = getCurrentTrainingSession();
+    if (!sourceSession) {
+      if (els.routineMessage) {
+        els.routineMessage.textContent = 'Selecciona una sesión para duplicar.';
+      }
+      return;
+    }
+    const duplicateDate = els.routineDate?.value || getTodayLocalDate();
+    const copy = cloneSessionPlanning(sourceSession, duplicateDate);
+    state.trainingsV08.sessions.push(copy);
+    setActiveSessionForClient(sourceSession.clientId, copy.id);
+
+    if (isCloudSessionActive()) {
+      const syncResult = await syncSessionToCloud(copy);
+      if (!syncResult.ok) {
+        if (els.routineMessage) {
+          els.routineMessage.textContent = syncResult.error || 'No se pudo duplicar sesión en Cloud.';
+        }
+        return;
+      }
+      if (els.routineMessage) {
+        els.routineMessage.textContent = 'Sesión duplicada y sincronizada en Cloud.';
+      }
+      renderTrainings();
+      return;
+    }
+
+    if (els.routineMessage) {
+      els.routineMessage.textContent = 'Sesión duplicada.';
+    }
+    persist();
+  }
+
+  async function saveCurrentSessionAsTemplate() {
+    const session = getCurrentTrainingSession();
+    if (!session) {
+      if (els.routineMessage) {
+        els.routineMessage.textContent = 'Selecciona una sesión para guardar como plantilla.';
+      }
+      return;
+    }
+
+    const suggestedName = String(session.title || '').trim() || 'Plantilla de entrenamiento';
+    const templateName = window.prompt('Nombre de la plantilla', suggestedName);
+    if (!templateName) {
+      return;
+    }
+
+    const template = normalizeTrainingPlan({
+      id: dataApi.createId('tx-plan'),
+      clientId: session.clientId,
+      name: templateName,
+      notes: session.notes || '',
+      active: true,
+      exercises: getSessionExercises(session).map((exercise, index) => createTemplateExerciseFromSource(exercise, index))
+    });
+
+    state.trainingsV08.plans = [template, ...(state.trainingsV08.plans || [])];
+
+    if (isCloudSessionActive()) {
+      const cloudResult = await persistTemplateToCloud(template);
+      if (!cloudResult.ok) {
+        if (els.routineMessage) {
+          els.routineMessage.textContent = cloudResult.error || 'No se pudo guardar plantilla en Cloud.';
+        }
+        return;
+      }
+      await refreshTrainingsV08FromCloud();
+    } else {
+      persist();
+    }
+
+    loadTemplateIntoForm(template.id);
+    renderTemplateList();
+    if (els.routineMessage) {
+      els.routineMessage.textContent = 'Sesión guardada como plantilla.';
+    }
+  }
+
+  function editTemplateExercise(exerciseId) {
+    const template = getTemplateById(trainingUi.editingTemplateId);
+    if (!template) {
+      return;
+    }
+    const exercise = normalizeTemplateExercises(template.exercises || []).find((item) => item.id === exerciseId);
+    if (!exercise) {
+      return;
+    }
+    trainingUi.editingTemplateExerciseId = exercise.id;
+    if (els.templateExerciseIdInput) {
+      els.templateExerciseIdInput.value = exercise.id;
+    }
+    if (els.templateExerciseNameInput) {
+      els.templateExerciseNameInput.value = exercise.exerciseName;
+    }
+    if (els.templateExerciseNotesInput) {
+      els.templateExerciseNotesInput.value = exercise.coachNotes || '';
+    }
+    if (els.templateExerciseSetsInput) {
+      els.templateExerciseSetsInput.value = String(exercise.plannedSets);
+    }
+    if (els.templateExerciseRepMinInput) {
+      els.templateExerciseRepMinInput.value = String(exercise.plannedRepMin);
+    }
+    if (els.templateExerciseRepMaxInput) {
+      els.templateExerciseRepMaxInput.value = String(exercise.plannedRepMax);
+    }
+    if (els.templateExerciseWeightInput) {
+      els.templateExerciseWeightInput.value = String(exercise.targetWeight || 0);
+    }
+    if (els.templateExerciseRestInput) {
+      els.templateExerciseRestInput.value = String(exercise.restSeconds);
+    }
+  }
+
+  async function moveTemplateExercise(exerciseId, direction) {
+    const template = getTemplateById(trainingUi.editingTemplateId);
+    if (!template) {
+      return;
+    }
+    const exercises = normalizeTemplateExercises(template.exercises || []);
+    const currentIndex = exercises.findIndex((item) => item.id === exerciseId);
+    if (currentIndex < 0) {
+      return;
+    }
+    const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (nextIndex < 0 || nextIndex >= exercises.length) {
+      return;
+    }
+    const [item] = exercises.splice(currentIndex, 1);
+    exercises.splice(nextIndex, 0, item);
+    template.exercises = normalizeTemplateExercises(exercises);
+
+    if (isCloudSessionActive()) {
+      const cloudResult = await persistTemplateToCloud(template);
+      if (!cloudResult.ok) {
+        setTemplateMessage(cloudResult.error || 'No se pudo ordenar la plantilla en Cloud.', 'bad');
+        return;
+      }
+    }
+
+    if (!isCloudSessionActive()) {
+      persist();
+    } else {
+      render();
+    }
+    renderTemplateList();
+  }
+
+  async function deleteTemplateExercise(exerciseId) {
+    const template = getTemplateById(trainingUi.editingTemplateId);
+    if (!template) {
+      return;
+    }
+    template.exercises = normalizeTemplateExercises(template.exercises || []).filter((item) => item.id !== exerciseId);
+    clearTemplateExerciseForm();
+
+    if (isCloudSessionActive()) {
+      const cloudResult = await persistTemplateToCloud(template);
+      if (!cloudResult.ok) {
+        setTemplateMessage(cloudResult.error || 'No se pudo eliminar ejercicio en Cloud.', 'bad');
+        return;
+      }
+    }
+
+    if (!isCloudSessionActive()) {
+      persist();
+    } else {
+      render();
+    }
+    renderTemplateList();
+  }
+
+  async function duplicateTemplate(templateId) {
+    const source = getTemplateById(templateId);
+    if (!source) {
+      return;
+    }
+    const copy = normalizeTrainingPlan({
+      id: dataApi.createId('tx-plan'),
+      clientId: trainingUi.selectedClientId || source.clientId,
+      name: `${source.name} copia`,
+      notes: source.notes,
+      active: source.active,
+      exercises: normalizeTemplateExercises(source.exercises || []).map((exercise, index) => ({
+        ...exercise,
+        id: dataApi.createId('tpl-exercise'),
+        order: index + 1
+      }))
+    });
+    state.trainingsV08.plans = [copy, ...(state.trainingsV08.plans || [])];
+
+    if (isCloudSessionActive()) {
+      const cloudResult = await persistTemplateToCloud(copy);
+      if (!cloudResult.ok) {
+        setTemplateMessage(cloudResult.error || 'No se pudo duplicar plantilla en Cloud.', 'bad');
+        return;
+      }
+      await refreshTrainingsV08FromCloud();
+    } else {
+      persist();
+    }
+
+    loadTemplateIntoForm(copy.id);
+    renderTemplateList();
+  }
+
+  async function deleteTemplate(templateId) {
+    state.trainingsV08.plans = (state.trainingsV08.plans || []).filter((template) => template.id !== templateId);
+    if (trainingUi.editingTemplateId === templateId) {
+      resetTemplateDraft();
+    }
+
+    if (isCloudSessionActive()) {
+      const cloudResult = await removeTemplateFromCloud(templateId);
+      if (!cloudResult.ok) {
+        setTemplateMessage(cloudResult.error || 'No se pudo eliminar plantilla en Cloud.', 'bad');
+        return;
+      }
+      await refreshTrainingsV08FromCloud();
+    } else {
+      persist();
+    }
+
+    setTemplateMessage('Plantilla eliminada.', 'ok');
+    renderTemplateList();
   }
 
   function sortSessionsByDateAsc(sessions) {
@@ -1724,13 +2426,7 @@
     if (cloudDataApi && typeof cloudDataApi.listTrainingPlans === 'function') {
       const plansResponse = await cloudDataApi.listTrainingPlans();
       if (plansResponse && Array.isArray(plansResponse.data)) {
-        state.trainingsV08.plans = plansResponse.data.map((plan) => ({
-          id: plan.id,
-          clientId: plan.client_id,
-          name: plan.name || 'Plan de entrenamiento',
-          active: plan.active !== false,
-          notes: plan.notes || ''
-        }));
+        state.trainingsV08.plans = plansResponse.data.map((plan, index) => normalizeTrainingPlan(plan, index));
       }
     }
 
@@ -1931,6 +2627,11 @@
       els.trainingSessionId.disabled = !sessions.length;
     }
 
+    if (els.sessionCreateMode && els.sessionTemplateId) {
+      const mode = els.sessionCreateMode.value || 'scratch';
+      els.sessionTemplateId.disabled = mode !== 'template' || !(state.trainingsV08.plans || []).length;
+    }
+
     if (els.routineDate && (!els.routineDate.value || selectedSession)) {
       els.routineDate.value = selectedSession?.date || getTodayLocalDate();
     }
@@ -2072,6 +2773,8 @@
     if (els.saveSetBtn) {
       els.saveSetBtn.disabled = !(currentSession && currentExercise);
     }
+
+    renderTemplateList();
   }
 
   function renderSettings() {
@@ -3269,19 +3972,141 @@
         }
         return;
       }
-      createSessionForClient(clientId).then((result) => {
+
+      const createMode = els.sessionCreateMode?.value || 'scratch';
+      const selectedTemplateId = els.sessionTemplateId?.value || '';
+      if (createMode === 'template' && !selectedTemplateId) {
+        if (els.routineMessage) {
+          els.routineMessage.textContent = 'Selecciona una plantilla para crear la sesión.';
+        }
+        return;
+      }
+      const sessionOptions = createMode === 'template'
+        ? { templateId: selectedTemplateId }
+        : {};
+
+      createSessionForClient(clientId, sessionOptions).then((result) => {
         if (!result.ok && els.routineMessage) {
           els.routineMessage.textContent = result.error || 'No se pudo crear la sesión.';
           return;
         }
         if (els.routineMessage) {
-          els.routineMessage.textContent = 'Sesión creada. Ahora agrega ejercicios.';
+          els.routineMessage.textContent = createMode === 'template'
+            ? 'Sesión creada desde plantilla. Ahora ejecuta o ajusta ejercicios.'
+            : 'Sesión creada. Ahora agrega ejercicios.';
         }
         renderTrainings();
       }).catch((error) => {
         if (els.routineMessage) {
           els.routineMessage.textContent = error?.message || 'No se pudo crear la sesión.';
         }
+      });
+      return;
+    }
+
+    if (target === els.duplicateSessionBtn) {
+      duplicateSessionForSelectedClient().catch((error) => {
+        if (els.routineMessage) {
+          els.routineMessage.textContent = error?.message || 'No se pudo duplicar la sesión.';
+        }
+      });
+      return;
+    }
+
+    if (target === els.saveAsTemplateBtn) {
+      saveCurrentSessionAsTemplate().catch((error) => {
+        if (els.routineMessage) {
+          els.routineMessage.textContent = error?.message || 'No se pudo guardar la sesión como plantilla.';
+        }
+      });
+      return;
+    }
+
+    if (target === els.newTemplateBtn) {
+      resetTemplateDraft();
+      setTemplateMessage('Nueva plantilla lista para editar.', 'neutral');
+      renderTemplateList();
+      return;
+    }
+
+    if (target === els.saveTemplateBtn) {
+      saveTemplate().catch((error) => {
+        setTemplateMessage(error?.message || 'No se pudo guardar la plantilla.', 'bad');
+      });
+      return;
+    }
+
+    if (target === els.saveTemplateExerciseBtn) {
+      saveTemplateExercise().catch((error) => {
+        setTemplateMessage(error?.message || 'No se pudo guardar el ejercicio de plantilla.', 'bad');
+      });
+      return;
+    }
+
+    if (target === els.assignTemplateBtn) {
+      assignTemplateToSelectedClient(els.templateIdInput?.value || '').catch((error) => {
+        setTemplateMessage(error?.message || 'No se pudo asignar la plantilla.', 'bad');
+      });
+      return;
+    }
+
+    const templateUseId = target.getAttribute('data-template-use');
+    if (templateUseId) {
+      assignTemplateToSelectedClient(templateUseId).catch((error) => {
+        setTemplateMessage(error?.message || 'No se pudo asignar la plantilla.', 'bad');
+      });
+      return;
+    }
+
+    const templateEditId = target.getAttribute('data-template-edit');
+    if (templateEditId) {
+      loadTemplateIntoForm(templateEditId);
+      renderTemplateList();
+      return;
+    }
+
+    const templateDuplicateId = target.getAttribute('data-template-duplicate');
+    if (templateDuplicateId) {
+      duplicateTemplate(templateDuplicateId).catch((error) => {
+        setTemplateMessage(error?.message || 'No se pudo duplicar la plantilla.', 'bad');
+      });
+      return;
+    }
+
+    const templateDeleteId = target.getAttribute('data-template-delete');
+    if (templateDeleteId) {
+      deleteTemplate(templateDeleteId).catch((error) => {
+        setTemplateMessage(error?.message || 'No se pudo eliminar la plantilla.', 'bad');
+      });
+      return;
+    }
+
+    const templateExerciseEditId = target.getAttribute('data-template-exercise-edit');
+    if (templateExerciseEditId) {
+      editTemplateExercise(templateExerciseEditId);
+      return;
+    }
+
+    const templateExerciseUpId = target.getAttribute('data-template-exercise-up');
+    if (templateExerciseUpId) {
+      moveTemplateExercise(templateExerciseUpId, 'up').catch((error) => {
+        setTemplateMessage(error?.message || 'No se pudo mover el ejercicio de plantilla.', 'bad');
+      });
+      return;
+    }
+
+    const templateExerciseDownId = target.getAttribute('data-template-exercise-down');
+    if (templateExerciseDownId) {
+      moveTemplateExercise(templateExerciseDownId, 'down').catch((error) => {
+        setTemplateMessage(error?.message || 'No se pudo mover el ejercicio de plantilla.', 'bad');
+      });
+      return;
+    }
+
+    const templateExerciseDeleteId = target.getAttribute('data-template-exercise-delete');
+    if (templateExerciseDeleteId) {
+      deleteTemplateExercise(templateExerciseDeleteId).catch((error) => {
+        setTemplateMessage(error?.message || 'No se pudo eliminar el ejercicio de plantilla.', 'bad');
       });
       return;
     }
@@ -3587,6 +4412,17 @@
       els.historyClientId.value = trainingUi.selectedClientId;
     }
     renderTrainings();
+  });
+  els.sessionCreateMode?.addEventListener('change', () => {
+    renderTrainings();
+  });
+  els.sessionTemplateId?.addEventListener('change', () => {
+    if ((els.sessionCreateMode?.value || 'scratch') === 'template') {
+      const selectedTemplate = getTemplateById(els.sessionTemplateId?.value || '');
+      if (selectedTemplate && els.routineName && !els.routineName.value) {
+        els.routineName.value = selectedTemplate.name;
+      }
+    }
   });
   els.trainingSessionId?.addEventListener('change', (event) => {
     const sessionId = event.target.value || '';

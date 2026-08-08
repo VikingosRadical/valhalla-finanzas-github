@@ -191,6 +191,63 @@
     return { data: Array.isArray(data) ? data : [], error };
   }
 
+  async function upsertTrainingPlan(planPayload) {
+    if (!isAvailable()) {
+      return { data: null, error: 'Modo local' };
+    }
+
+    const ownerContext = await getOwnerContext();
+    if (ownerContext.error) {
+      return { data: null, error: ownerContext.error };
+    }
+
+    const client = getSupabaseClient();
+    if (!client) {
+      return { data: null, error: 'Supabase SDK no disponible' };
+    }
+
+    const payload = {
+      id: String(planPayload?.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `tx-plan-${Date.now()}`)),
+      owner_id: ownerContext.ownerId,
+      client_id: String(planPayload?.client_id || ''),
+      name: String(planPayload?.name || 'Plantilla de entrenamiento'),
+      notes: String(planPayload?.notes || ''),
+      active: planPayload?.active !== false
+    };
+
+    const { data, error } = await client
+      .from('training_plans')
+      .upsert(payload, { onConflict: 'id' })
+      .select()
+      .single();
+
+    return { data, error };
+  }
+
+  async function deleteTrainingPlan(planId) {
+    if (!isAvailable()) {
+      return { data: null, error: 'Modo local' };
+    }
+
+    const ownerContext = await getOwnerContext();
+    if (ownerContext.error) {
+      return { data: null, error: ownerContext.error };
+    }
+
+    const client = getSupabaseClient();
+    if (!client) {
+      return { data: null, error: 'Supabase SDK no disponible' };
+    }
+
+    const { error } = await client
+      .from('training_plans')
+      .delete()
+      .eq('id', planId)
+      .eq('owner_id', ownerContext.ownerId);
+
+    return { data: null, error };
+  }
+
   async function listTrainingSessions() {
     if (!isAvailable()) {
       return { data: [], error: 'Modo local' };
@@ -533,6 +590,8 @@
     updateClient,
     markClientPaid,
     listTrainingPlans,
+    upsertTrainingPlan,
+    deleteTrainingPlan,
     listTrainingSessions,
     upsertTrainingSession,
     upsertTrainingExercise,

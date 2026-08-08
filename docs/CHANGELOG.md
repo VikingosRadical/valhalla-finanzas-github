@@ -140,6 +140,28 @@
 - La sincronización profunda de sesiones ahora refleja también eliminaciones y reordenamientos de ejercicios/series para evitar desalineación con Supabase.
 - Se conservan las tablas existentes (`training_plans`, `training_sessions`, `training_exercises`, `training_sets`) sin cambios de esquema.
 
+## VALHALLA v0.8 — Sprint Plantillas y Asignación - 2026-08-08
+
+### Nuevas capacidades
+
+- Se incorporó gestión funcional de `plantillas` de entrenamiento con CRUD básico: crear, editar, duplicar, eliminar y usar.
+- Se agregó acción `Guardar como plantilla` desde una sesión ya planificada.
+- Se agregó `Nueva sesión` en dos modos: `Desde cero` y `Desde plantilla`.
+- Se incorporó `Asignar plantilla` por cliente y fecha para crear sesión `planned` rápidamente.
+- Se agregó `Duplicar sesión` para copiar planificación a una nueva fecha sin copiar resultados.
+
+### Reglas de negocio aplicadas
+
+- Las plantillas guardan solo estructura (ejercicios, orden, series, reps, descanso, nota técnica).
+- Las sesiones generadas desde plantilla son snapshots independientes.
+- No se copian resultados (`sets`, `completed`, `personalRecord`, `coachValidated`) al asignar plantilla ni al duplicar sesión.
+- Se mantiene el historial individual por cliente para mostrar `Última vez` y `Mejor marca` durante ejecución.
+
+### Cloud y fallback
+
+- Se usa la tabla existente `training_plans` para persistir plantillas en Cloud sin cambios de esquema.
+- Se mantiene fallback local con la misma experiencia funcional cuando no hay sesión Cloud.
+
 ### Seguridad
 
 - Se preparó el esquema SQL con RLS para que admin gestione sus propios datos por `owner_id`.

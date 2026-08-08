@@ -214,6 +214,32 @@ Campos preparados:
 - También limpia ejercicios y series eliminadas localmente para que Supabase refleje el estado real de la sesión.
 - No se crean tablas adicionales ni se modifica `schema.sql` en este sprint.
 
+## VALHALLA v0.8 - Sprint Plantillas y Asignación
+
+En este sprint no se modifica base de datos. Se reutilizan las tablas existentes:
+
+- `training_plans`: contenedor de plantillas reutilizables.
+- `training_sessions`: sesión asignada a cliente (snapshot operativo).
+- `training_exercises`: ejercicios planificados por sesión.
+- `training_sets`: resultados ejecutados serie por serie.
+
+Estrategia de plantillas en Cloud:
+
+- El nombre de plantilla se almacena en `training_plans.name`.
+- La estructura de ejercicios de la plantilla se serializa en `training_plans.notes` (JSON), manteniendo compatibilidad con notas de texto.
+- Las sesiones creadas desde plantilla guardan `plan_id` en `training_sessions`.
+
+Reglas clave:
+
+- Una plantilla no guarda `sets` realizados.
+- Al asignar plantilla o duplicar sesión, se copian solo campos de planificación.
+- El historial de cargas sigue siendo individual por cliente y se consulta desde sesiones/sets previos.
+
+Deuda técnica registrada:
+
+- `training_plans.client_id` es obligatorio en esquema actual. Se utiliza como referencia de origen para mantener compatibilidad sin migración.
+- Para plantillas globales puras desacopladas de cliente, se recomienda migración futura de esquema.
+
 ### Migración manual futura
 
 Se deja preparada una función manual futura:
