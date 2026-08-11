@@ -1523,6 +1523,182 @@
     return Array.isArray(exercise?.sets) ? exercise.sets : [];
   }
 
+  function getSetType(setEntry) {
+    const rawType = String(setEntry?.setType || setEntry?.set_type || 'S').trim().toUpperCase();
+    if (rawType === 'A' || rawType === 'T' || rawType === 'S') {
+      return rawType;
+    }
+    return 'S';
+  }
+
+  function isEffectiveSet(setEntry) {
+    const reps = Number(setEntry?.reps || 0);
+    return setEntry?.completed !== false && getSetType(setEntry) === 'S' && Number.isFinite(reps) && reps > 0;
+  }
+
+  function getEffectiveExerciseSets(exercise) {
+    return getExerciseSets(exercise)
+      .filter((setEntry) => isEffectiveSet(setEntry))
+      .sort((a, b) => Number(a.setNumber || 0) - Number(b.setNumber || 0));
+  }
+
+  function summarizeExecutionWeight(execution) {
+    if (!execution || !execution.sets.length) {
+      return 'Sin registro';
+    }
+    const uniqueWeights = Array.from(new Set(execution.sets
+      .map((setEntry) => Number(setEntry.weight || 0))
+      .filter((weight) => Number.isFinite(weight) && weight >= 0)));
+    if (!uniqueWeights.length) {
+      return 'Sin registro';
+    }
+    if (uniqueWeights.length === 1) {
+      return `${uniqueWeights[0]} kg`;
+    }
+    return `${uniqueWeights[0]}-${uniqueWeights[uniqueWeights.length - 1]} kg`;
+  }
+
+  function summarizeExecutionReps(execution) {
+    if (!execution || !execution.sets.length) {
+      return 'Sin registro';
+    }
+    return execution.sets.map((setEntry) => `${Number(setEntry.reps || 0)}`).join('/');
+  }
+
+  function buildExecutionSnapshot(exercise) {
+    const sets = getEffectiveExerciseSets(exercise);
+    const totalReps = sets.reduce((sum, setEntry) => sum + Number(setEntry.reps || 0), 0);
+    const averageWeight = sets.length
+      ? sets.reduce((sum, setEntry) => sum + Number(setEntry.weight || 0), 0) / sets.length
+      : 0;
+    return {
+      sets,
+      totalReps,
+      averageWeight
+    };
+  }
+
+  function getLastValidExerciseExecution(clientId, exerciseName, options = {}) {
+    const matches = getTrainingExercisesByClientExercise(clientId, exerciseName, options);
+    for (let index = matches.length - 1; index >= 0; index -= 1) {
+      const candidate = matches[index];
+      const snapshot = buildExecutionSnapshot(candidate.exercise);
+      if (snapshot.sets.length) {
+        return {
+          session: candidate.session,
+          exercise: candidate.exercise,
+          snapshot
+        };
+      }
+    }
+    return null;
+  }
+
+  function compareExerciseSnapshots(previousSnapshot, currentSnapshot) {
+    if (!previousSnapshot || !previousSnapshot.sets.length || !currentSnapshot || !currentSnapshot.sets.length) {
+      return {
+        status: 'no_data',
+        headline: 'Sin comparación previa'
+      };
+    }
+
+    const previousBySetNumber = new Map(previousSnapshot.sets.map((setEntry) => [Number(setEntry.setNumber || 0), setEntry]));
+    const comparablePairs = currentSnapshot.sets
+      .map((currentSet) => {
+        const previousSet = previousBySetNumber.get(Number(currentSet.setNumber || 0));
+        return previousSet ? { previousSet, currentSet } : null;
+      })
+      .filter(Boolean);
+
+    const previousTotalReps = Number(previousSnapshot.totalReps || 0);
+    const currentTotalReps = Number(currentSnapshot.totalReps || 0);
+    const totalRepsImproved = currentTotalReps > previousTotalReps;
+    const totalRepsWorse = currentTotalReps < previousTotalReps;
+
+    const previousAverageWeight = Number(previousSnapshot.averageWeight || 0);
+    const currentAverageWeight = Number(currentSnapshot.averageWeight || 0);
+    const loadImproved = currentAverageWeight > previousAverageWeight;
+    const loadWorse = currentAverageWeight < previousAverageWeight;
+
+    const setRepsImproved = comparablePairs.length > 0
+      && comparablePairs.every(({ currentSet, previousSet }) => Number(currentSet.reps || 0) >= Number(previousSet.reps || 0))
+      && comparablePairs.some(({ currentSet, previousSet }) => Number(currentSet.reps || 0) > Number(previousSet.reps || 0));
+
+    if ((loadImproved && !totalRepsWorse) || (!loadWorse && (totalRepsImproved || setRepsImproved))) {
+      return {
+        status: 'improved',
+        headline: 'Mejora de rendimiento'
+      };
+    }
+
+    if (loadWorse && !totalRepsImproved) {
+      return {
+        status: 'worse',
+        headline: 'Rendimiento por debajo de la sesión anterior'
+      };
+    }
+
+    return {
+      status: 'stable',
+      headline: 'Rendimiento estable respecto a la sesión anterior'
+    };
+  }
+
+  function buildProgressionSuggestion(exercise, currentSnapshot) {
+    const minReps = Math.max(1, Number(exercise?.plannedRepMin || 1));
+    const maxReps = Math.max(minReps, Number(exercise?.plannedRepMax || minReps));
+    const sets = currentSnapshot?.sets || [];
+    if (!sets.length) {
+      return null;
+    }
+
+    const anyBelowMin = sets.some((setEntry) => Number(setEntry.reps || 0) < minReps);
+    const allAtOrAboveMax = sets.every((setEntry) => Number(setEntry.reps || 0) >= maxReps);
+
+    if (anyBelowMin) {
+      return {
+        code: 'OBSERVAR',
+        badge: '⚠ OBSERVAR',
+        message: 'Rendimiento por debajo del objetivo. No aumentar carga automáticamente.'
+      };
+    }
+
+    if (allAtOrAboveMax) {
+      return {
+        code: 'PROGRESAR',
+        badge: '↑ PROGRESAR',
+        message: 'Sugerencia: aumentar ligeramente la carga en la próxima sesión.'
+      };
+    }
+
+    return {
+      code: 'MANTENER',
+      badge: '= MANTENER',
+      message: 'Sugerencia: mantener la carga e intentar aumentar repeticiones.'
+    };
+  }
+
+  function getExerciseCompletionFeedback(clientId, exercise, currentSessionId) {
+    const currentSnapshot = buildExecutionSnapshot(exercise);
+    if (!currentSnapshot.sets.length) {
+      return null;
+    }
+
+    const previousExecution = getLastValidExerciseExecution(clientId, exercise.exerciseName, {
+      ignoreSessionId: currentSessionId
+    });
+    const previousSnapshot = previousExecution?.snapshot || null;
+    const comparison = compareExerciseSnapshots(previousSnapshot, currentSnapshot);
+    const suggestion = buildProgressionSuggestion(exercise, currentSnapshot);
+
+    return {
+      comparison,
+      suggestion,
+      previousExecution,
+      currentSnapshot
+    };
+  }
+
   function getBestWeightForExercise(clientId, exerciseName, options = {}) {
     const matches = getTrainingExercisesByClientExercise(clientId, exerciseName, options);
     const weights = [];
@@ -1542,27 +1718,14 @@
       return 'Sin registro anterior';
     }
 
-    const matches = getTrainingExercisesByClientExercise(clientId, exerciseName, options);
-    if (!matches.length) {
+    const previousExecution = getLastValidExerciseExecution(clientId, exerciseName, options);
+    if (!previousExecution) {
       return 'Sin registro anterior';
     }
 
-    const last = matches[matches.length - 1];
-    const sets = getExerciseSets(last.exercise);
-    if (!sets.length) {
-      return `Última sesión: ${last.session.date ? formatClientDate(last.session.date) : 'sin fecha'} · sin series registradas`;
-    }
-
-    const compactSets = sets
-      .map((setEntry) => `${Number(setEntry.weight || 0)} kg × ${Number(setEntry.reps || 0)}`)
-      .filter((item) => item !== '0 kg × 0');
-
-    if (!compactSets.length) {
-      return `Última sesión: ${last.session.date ? formatClientDate(last.session.date) : 'sin fecha'} · sin series registradas`;
-    }
-
-    const bestWeight = getBestWeightForExercise(clientId, exerciseName, options);
-    return `Última sesión: ${compactSets.join(' | ')}${bestWeight > 0 ? ` · Mejor histórico ${bestWeight} kg` : ''}`;
+    const weightLabel = summarizeExecutionWeight(previousExecution.snapshot);
+    const repsLabel = summarizeExecutionReps(previousExecution.snapshot);
+    return `Última: ${weightLabel} · ${repsLabel}`;
   }
 
   function buildProgressSummary(clientId, exerciseName) {
@@ -1710,26 +1873,23 @@
   }
 
   function getPreviousExerciseMetrics(clientId, exerciseName, currentSessionId) {
-    const matches = getTrainingExercisesByClientExercise(clientId, exerciseName, { ignoreSessionId: currentSessionId });
-    if (!matches.length) {
+    const previousExecution = getLastValidExerciseExecution(clientId, exerciseName, { ignoreSessionId: currentSessionId });
+    if (!previousExecution) {
       return {
         hasHistory: false,
-        label: 'Primera vez con este ejercicio',
+        label: 'Sin registro anterior',
         lastWeight: 'Sin registro',
         lastReps: 'Sin registro',
         bestWeight: 'Sin registro'
       };
     }
 
-    const last = matches[matches.length - 1];
-    const sets = getExerciseSets(last.exercise);
-    const lastSet = sets[sets.length - 1] || null;
     const bestWeight = getBestWeightForExercise(clientId, exerciseName, { ignoreSessionId: currentSessionId });
     return {
       hasHistory: true,
       label: buildLastSessionSummary(clientId, exerciseName, { ignoreSessionId: currentSessionId }),
-      lastWeight: lastSet ? `${Number(lastSet.weight || 0)} kg` : 'Sin registro',
-      lastReps: lastSet ? `${Number(lastSet.reps || 0)}` : 'Sin registro',
+      lastWeight: summarizeExecutionWeight(previousExecution.snapshot),
+      lastReps: summarizeExecutionReps(previousExecution.snapshot),
       bestWeight: bestWeight > 0 ? `${bestWeight} kg` : 'Sin registro'
     };
   }
@@ -1838,6 +1998,7 @@
       existingSet.reps = reps;
       existingSet.completed = completed;
       existingSet.personalRecord = isPotentialRecord;
+      existingSet.setType = getSetType(existingSet);
       existingSet.techniqueStatus = existingSet.techniqueStatus || 'pending';
       existingSet.coachValidated = Boolean(existingSet.coachValidated);
     } else {
@@ -1846,6 +2007,7 @@
         weight,
         reps,
         completed,
+        setType: 'S',
         createdAt: new Date().toISOString(),
         techniqueStatus: 'pending',
         coachValidated: false,
@@ -1866,6 +2028,14 @@
     }
 
     const doneSets = sets.filter((setEntry) => setEntry.completed !== false).length;
+    const exerciseCompleted = plannedSets > 0 && doneSets >= plannedSets;
+    const completionFeedback = exerciseCompleted ? getExerciseCompletionFeedback(session.clientId, exercise, session.id) : null;
+    if (exerciseCompleted && completionFeedback?.suggestion && els.studentSetNotice) {
+      const comparisonText = completionFeedback.comparison?.status !== 'no_data'
+        ? ` ${completionFeedback.comparison.headline}.`
+        : '';
+      els.studentSetNotice.textContent = `${completionFeedback.suggestion.badge}. ${completionFeedback.suggestion.message}${comparisonText}`;
+    }
     if (doneSets < plannedSets && !els.studentWeightInput?.value) {
       els.studentWeightInput.value = String(Number(exercise.targetWeight || 0));
     }
@@ -2045,8 +2215,16 @@
 
     if (els.studentExerciseCompletedNotice) {
       const completed = plannedSets > 0 && doneSets >= plannedSets;
+      const completionFeedback = completed ? getExerciseCompletionFeedback(client.id, exercise, session.id) : null;
       els.studentExerciseCompletedNotice.classList.toggle('hidden', !completed);
-      els.studentExerciseCompletedNotice.textContent = completed ? 'Ejercicio completado' : `Serie ${nextSetNumber} de ${Math.max(1, plannedSets)}`;
+      if (completed && completionFeedback?.suggestion) {
+        const comparisonText = completionFeedback.comparison?.status !== 'no_data'
+          ? ` · ${completionFeedback.comparison.headline}`
+          : '';
+        els.studentExerciseCompletedNotice.textContent = `${completionFeedback.suggestion.badge}${comparisonText}`;
+      } else {
+        els.studentExerciseCompletedNotice.textContent = completed ? 'Ejercicio completado' : `Serie ${nextSetNumber} de ${Math.max(1, plannedSets)}`;
+      }
     }
 
     if (els.studentNextExerciseBtn) {
@@ -3970,6 +4148,7 @@
       existingSet.weight = weight;
       existingSet.reps = reps;
       existingSet.completed = completed;
+      existingSet.setType = getSetType(existingSet);
       existingSet.techniqueStatus = existingSet.techniqueStatus || 'pending';
       existingSet.coachValidated = Boolean(existingSet.coachValidated);
       existingSet.personalRecord = isPotentialPr;
@@ -3979,6 +4158,7 @@
         weight,
         reps,
         completed,
+        setType: 'S',
         createdAt: new Date().toISOString(),
         techniqueStatus: 'pending',
         coachValidated: false,
@@ -3996,6 +4176,16 @@
     }
     if (els.setRecordNotice) {
       els.setRecordNotice.textContent = isPotentialPr ? '🏆 Posible nuevo récord' : 'Serie guardada.';
+    }
+    const plannedSets = Math.max(1, Number(exercise.plannedSets || 1));
+    const doneSets = sets.filter((setEntry) => setEntry.completed !== false).length;
+    const exerciseCompleted = plannedSets > 0 && doneSets >= plannedSets;
+    const completionFeedback = exerciseCompleted ? getExerciseCompletionFeedback(session.clientId, exercise, session.id) : null;
+    if (exerciseCompleted && completionFeedback?.suggestion && els.setRecordNotice) {
+      const comparisonText = completionFeedback.comparison?.status !== 'no_data'
+        ? ` ${completionFeedback.comparison.headline}.`
+        : '';
+      els.setRecordNotice.textContent = `${completionFeedback.suggestion.badge}. ${completionFeedback.suggestion.message}${comparisonText}`;
     }
     if (isCloudSessionActive()) {
       const syncResult = await syncSessionToCloud(session);

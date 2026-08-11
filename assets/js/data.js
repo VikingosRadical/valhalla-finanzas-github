@@ -91,6 +91,7 @@
       plans: [],
       sessions: []
     },
+    exerciseLibrary: [],
     sportsProfiles: [],
     sportsConsiderations: [],
     movementStatuses: []
@@ -176,6 +177,7 @@
       plans: [],
       sessions: []
     };
+    state.exerciseLibrary = [];
     state.sportsProfiles = [];
     state.sportsConsiderations = [];
     state.movementStatuses = [];
@@ -223,6 +225,33 @@
     };
   }
 
+  function normalizeLibraryExercise(item) {
+    return {
+      id: item.id || createId('library-exercise'),
+      name: item.name || 'Ejercicio',
+      normalizedName: item.normalizedName || item.normalized_name || '',
+      description: item.description || '',
+      pattern: item.pattern || 'other',
+      primaryMuscle: item.primaryMuscle || item.primary_muscle || 'full_body',
+      secondaryMuscles: Array.isArray(item.secondaryMuscles)
+        ? item.secondaryMuscles.slice()
+        : (Array.isArray(item.secondary_muscles) ? item.secondary_muscles.slice() : []),
+      equipments: Array.isArray(item.equipments)
+        ? item.equipments.slice()
+        : (Array.isArray(item.equipment_keys) ? item.equipment_keys.slice() : []),
+      technicalLevel: item.technicalLevel || item.technical_level || 'beginner',
+      loadType: item.loadType || item.load_type || 'external_load',
+      active: item.active !== false,
+      relations: Array.isArray(item.relations) ? item.relations.map((relation) => ({
+        id: relation.id || createId('library-relation'),
+        relatedExerciseId: relation.relatedExerciseId || relation.related_exercise_id || '',
+        relationType: relation.relationType || relation.relation_type || 'alternative_to',
+        notes: relation.notes || '',
+        relatedExerciseName: relation.relatedExerciseName || relation.related_exercise_name || ''
+      })) : []
+    };
+  }
+
   function slugifyTrainingPart(value) {
     return String(value || '')
       .toLowerCase()
@@ -233,11 +262,14 @@
   }
 
   function normalizeTrainingSet(setEntry, index) {
+    const rawType = String(setEntry.setType || setEntry.set_type || 'S').trim().toUpperCase();
+    const setType = rawType === 'A' || rawType === 'T' || rawType === 'S' ? rawType : 'S';
     return {
       setNumber: Number(setEntry.setNumber || index + 1),
       weight: Number(setEntry.weight || 0),
       reps: Number(setEntry.reps || 0),
       completed: setEntry.completed !== false,
+      setType,
       createdAt: setEntry.createdAt || new Date().toISOString(),
       techniqueStatus: setEntry.techniqueStatus || 'pending',
       coachValidated: Boolean(setEntry.coachValidated),
@@ -580,6 +612,7 @@
         })),
         sessions: mergedSessions
       },
+      exerciseLibrary: normalizeArray(parsed.exerciseLibrary, base.exerciseLibrary, normalizeLibraryExercise),
       sportsProfiles: normalizeArray(parsed.sportsProfiles, base.sportsProfiles, normalizeSportsProfile),
       sportsConsiderations: normalizeArray(parsed.sportsConsiderations, base.sportsConsiderations, normalizeSportsConsideration),
       movementStatuses: normalizeArray(parsed.movementStatuses, base.movementStatuses, normalizeMovementStatus),
@@ -629,6 +662,7 @@
     importState,
     createId,
     normalizeClient,
+    normalizeLibraryExercise,
     normalizeSportsProfile,
     normalizeSportsConsideration,
     normalizeMovementStatus

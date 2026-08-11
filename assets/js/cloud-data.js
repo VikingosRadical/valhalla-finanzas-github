@@ -1,3 +1,4 @@
+
 (function () {
   const authApi = window.VALHALLA.auth;
   const supabaseApi = window.VALHALLA.supabase;
@@ -40,11 +41,14 @@
   }
 
   function normalizeTrainingSet(setEntry, index) {
+    const rawType = String(setEntry?.setType || setEntry?.set_type || 'S').trim().toUpperCase();
+    const setType = rawType === 'A' || rawType === 'T' || rawType === 'S' ? rawType : 'S';
     return {
       setNumber: Number(setEntry?.setNumber || index + 1),
       weight: Number(setEntry?.weight || 0),
       reps: Number(setEntry?.reps || 0),
       completed: setEntry?.completed !== false,
+      setType,
       createdAt: setEntry?.createdAt || new Date().toISOString(),
       techniqueStatus: setEntry?.techniqueStatus || 'pending',
       coachValidated: Boolean(setEntry?.coachValidated),
@@ -58,6 +62,7 @@
     const plannedRepMaxRaw = Number(exercise?.plannedRepMax || plannedRepMin);
     return {
       id: String(exercise?.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `tx-exercise-${Date.now()}-${index + 1}`)),
+      libraryExerciseId: exercise?.libraryExerciseId || exercise?.library_exercise_id || null,
       exerciseName: String(exercise?.exerciseName || 'Ejercicio'),
       order: Number(exercise?.order || index + 1),
       plannedSets: plannedSets > 0 ? plannedSets : 1,
@@ -85,6 +90,23 @@
       exercises: Array.isArray(session?.exercises)
         ? session.exercises.map((exercise, exerciseIndex) => normalizeTrainingExercise(exercise, exerciseIndex))
         : []
+    };
+  }
+
+  function normalizeLibraryExercise(exercise) {
+    return {
+      id: exercise?.id || null,
+      name: String(exercise?.name || 'Ejercicio'),
+      normalizedName: String(exercise?.normalizedName || exercise?.normalized_name || ''),
+      description: String(exercise?.description || ''),
+      pattern: String(exercise?.pattern || 'other'),
+      primaryMuscle: String(exercise?.primaryMuscle || exercise?.primary_muscle || 'full_body'),
+      secondaryMuscles: Array.isArray(exercise?.secondaryMuscles) ? exercise.secondaryMuscles.slice() : [],
+      equipments: Array.isArray(exercise?.equipments) ? exercise.equipments.slice() : [],
+      technicalLevel: String(exercise?.technicalLevel || exercise?.technical_level || 'beginner'),
+      loadType: String(exercise?.loadType || exercise?.load_type || 'external_load'),
+      active: exercise?.active !== false,
+      relations: Array.isArray(exercise?.relations) ? exercise.relations.slice() : []
     };
   }
 
@@ -189,6 +211,209 @@
       .order('created_at', { ascending: false });
 
     return { data: Array.isArray(data) ? data : [], error };
+  }
+
+  async function listLibraryExercises() {
+    if (!isAvailable()) {
+      return { data: [], error: 'Modo local' };
+    }
+    const ownerContext = await getOwnerContext();
+    if (ownerContext.error) {
+      return { data: [], error: ownerContext.error };
+    }
+    const client = getSupabaseClient();
+    if (!client) {
+      return { data: [], error: 'Supabase SDK no disponible' };
+    }
+
+    const { data: exercisesData, error: exercisesError } = await client
+      .from('library_exercises')
+      .select('*')
+      .eq('owner_id', ownerContext.ownerId)
+      .order('name', { ascending: true });
+    if (exercisesError) {
+      return { data: [], error: exercisesError };
+    }
+
+    const exerciseIds = (exercisesData || []).map((item) => item.id);
+    const secondaryMusclesByExercise = new Map();
+    const equipmentsByExercise = new Map();
+    const relationsByExercise = new Map();
+
+    if (exerciseIds.length) {
+      const [{ data: muscleRows, error: muscleError }, { data: equipmentRows, error: equipmentError }, { data: relationRows, error: relationError }] = await Promise.all([
+        client.from('library_exercise_secondary_muscles').select('*').eq('owner_id', ownerContext.ownerId).in('exercise_id', exerciseIds),
+        client.from('library_exercise_equipments').select('*').eq('owner_id', ownerContext.ownerId).in('exercise_id', exerciseIds),
+        client.from('library_exercise_relations').select('*').eq('owner_id', ownerContext.ownerId).in('exercise_id', exerciseIds)
+      ]);
+      if (muscleError) {
+        return { data: [], error: muscleError };
+      }
+      if (equipmentError) {
+        return { data: [], error: equipmentError };
+      }
+      if (relationError) {
+        return { data: [], error: relationError };
+      }
+
+      const nameById = new Map((exercisesData || []).map((row) => [String(row.id), String(row.name || '')]));
+
+      (muscleRows || []).forEach((row) => {
+        const key = String(row.exercise_id);
+        if (!secondaryMusclesByExercise.has(key)) {
+          secondaryMusclesByExercise.set(key, []);
+        }
+        secondaryMusclesByExercise.get(key).push(String(row.muscle_key));
+      });
+
+      (equipmentRows || []).forEach((row) => {
+        const key = String(row.exercise_id);
+        if (!equipmentsByExercise.has(key)) {
+          equipmentsByExercise.set(key, []);
+        }
+        equipmentsByExercise.get(key).push(String(row.equipment_key));
+      });
+
+      (relationRows || []).forEach((row) => {
+        const key = String(row.exercise_id);
+        if (!relationsByExercise.has(key)) {
+          relationsByExercise.set(key, []);
+        }
+        relationsByExercise.get(key).push({
+          id: row.id,
+          relatedExerciseId: row.related_exercise_id,
+          relationType: row.relation_type,
+          notes: row.notes || '',
+          relatedExerciseName: nameById.get(String(row.related_exercise_id)) || ''
+        });
+      });
+    }
+
+    const exercises = (exercisesData || []).map((row) => normalizeLibraryExercise({
+      id: row.id,
+      name: row.name,
+      normalized_name: row.normalized_name,
+      description: row.description,
+      pattern: row.pattern,
+      primary_muscle: row.primary_muscle,
+      technical_level: row.technical_level,
+      load_type: row.load_type,
+      active: row.active,
+      secondaryMuscles: secondaryMusclesByExercise.get(String(row.id)) || [],
+      equipments: equipmentsByExercise.get(String(row.id)) || [],
+      relations: relationsByExercise.get(String(row.id)) || []
+    }));
+
+    return { data: exercises, error: null };
+  }
+
+  async function upsertLibraryExercise(exercisePayload) {
+    if (!isAvailable()) {
+      return { data: null, error: 'Modo local' };
+    }
+    const ownerContext = await getOwnerContext();
+    if (ownerContext.error) {
+      return { data: null, error: ownerContext.error };
+    }
+    const client = getSupabaseClient();
+    if (!client) {
+      return { data: null, error: 'Supabase SDK no disponible' };
+    }
+
+    const normalized = normalizeLibraryExercise(exercisePayload);
+    const { data, error } = await client
+      .from('library_exercises')
+      .upsert({
+        id: normalized.id || undefined,
+        owner_id: ownerContext.ownerId,
+        name: normalized.name,
+        normalized_name: normalized.normalizedName,
+        description: normalized.description || null,
+        pattern: normalized.pattern,
+        primary_muscle: normalized.primaryMuscle,
+        technical_level: normalized.technicalLevel,
+        load_type: normalized.loadType,
+        active: normalized.active !== false
+      }, { onConflict: 'id' })
+      .select()
+      .single();
+    if (error) {
+      return { data: null, error };
+    }
+
+    const exerciseId = data.id;
+    const [currentMuscles, currentEquipments, currentRelations] = await Promise.all([
+      client.from('library_exercise_secondary_muscles').select('*').eq('owner_id', ownerContext.ownerId).eq('exercise_id', exerciseId),
+      client.from('library_exercise_equipments').select('*').eq('owner_id', ownerContext.ownerId).eq('exercise_id', exerciseId),
+      client.from('library_exercise_relations').select('*').eq('owner_id', ownerContext.ownerId).eq('exercise_id', exerciseId)
+    ]);
+
+    const incomingMuscles = new Set(normalized.secondaryMuscles || []);
+    const incomingEquipments = new Set(normalized.equipments || []);
+    const incomingRelations = new Set((normalized.relations || []).map((relation) => `${relation.relatedExerciseId}::${relation.relationType}`));
+
+    const staleMuscles = (currentMuscles.data || []).filter((row) => !incomingMuscles.has(String(row.muscle_key))).map((row) => row.id);
+    const staleEquipments = (currentEquipments.data || []).filter((row) => !incomingEquipments.has(String(row.equipment_key))).map((row) => row.id);
+    const staleRelations = (currentRelations.data || []).filter((row) => !incomingRelations.has(`${row.related_exercise_id}::${row.relation_type}`)).map((row) => row.id);
+
+    if (staleMuscles.length) {
+      await client.from('library_exercise_secondary_muscles').delete().eq('owner_id', ownerContext.ownerId).in('id', staleMuscles);
+    }
+    if (staleEquipments.length) {
+      await client.from('library_exercise_equipments').delete().eq('owner_id', ownerContext.ownerId).in('id', staleEquipments);
+    }
+    if (staleRelations.length) {
+      await client.from('library_exercise_relations').delete().eq('owner_id', ownerContext.ownerId).in('id', staleRelations);
+    }
+
+    for (const muscleKey of incomingMuscles) {
+      await client.from('library_exercise_secondary_muscles').upsert({
+        owner_id: ownerContext.ownerId,
+        exercise_id: exerciseId,
+        muscle_key: muscleKey
+      }, { onConflict: 'exercise_id,muscle_key' });
+    }
+    for (const equipmentKey of incomingEquipments) {
+      await client.from('library_exercise_equipments').upsert({
+        owner_id: ownerContext.ownerId,
+        exercise_id: exerciseId,
+        equipment_key: equipmentKey
+      }, { onConflict: 'exercise_id,equipment_key' });
+    }
+    for (const relation of normalized.relations || []) {
+      if (!relation.relatedExerciseId) {
+        continue;
+      }
+      await client.from('library_exercise_relations').upsert({
+        owner_id: ownerContext.ownerId,
+        exercise_id: exerciseId,
+        related_exercise_id: relation.relatedExerciseId,
+        relation_type: relation.relationType,
+        notes: relation.notes || null
+      }, { onConflict: 'exercise_id,related_exercise_id,relation_type' });
+    }
+
+    return { data, error: null };
+  }
+
+  async function deleteLibraryExercise(exerciseId) {
+    if (!isAvailable()) {
+      return { data: null, error: 'Modo local' };
+    }
+    const ownerContext = await getOwnerContext();
+    if (ownerContext.error) {
+      return { data: null, error: ownerContext.error };
+    }
+    const client = getSupabaseClient();
+    if (!client) {
+      return { data: null, error: 'Supabase SDK no disponible' };
+    }
+    const { error } = await client
+      .from('library_exercises')
+      .update({ active: false })
+      .eq('id', exerciseId)
+      .eq('owner_id', ownerContext.ownerId);
+    return { data: null, error };
   }
 
   async function upsertTrainingPlan(planPayload) {
@@ -409,6 +634,7 @@
       id: itemPayload?.id || undefined,
       owner_id: ownerContext.ownerId,
       client_id: itemPayload?.client_id,
+      library_exercise_id: itemPayload?.library_exercise_id || null,
       movement_name: itemPayload?.movement_name || 'Movimiento',
       movement_key: itemPayload?.movement_key || 'movimiento',
       status: itemPayload?.status || 'no_evaluado',
@@ -511,6 +737,7 @@
           weight: setRow.weight,
           reps: setRow.reps,
           completed: setRow.completed,
+          setType: setRow.set_type,
           createdAt: setRow.created_at,
           techniqueStatus: setRow.technique_status,
           coachValidated: setRow.coach_validated,
@@ -527,6 +754,7 @@
       }
       exercisesBySessionId.get(sessionId).push(normalizeTrainingExercise({
         id: exerciseRow.id,
+        library_exercise_id: exerciseRow.library_exercise_id,
         exerciseName: exerciseRow.exercise_name,
         order: exerciseRow.exercise_order,
         plannedSets: exerciseRow.planned_sets,
@@ -614,6 +842,7 @@
       owner_id: ownerContext.ownerId,
       client_id: normalizedSession.clientId,
       session_id: normalizedSession.id,
+      library_exercise_id: normalizedExercise.libraryExerciseId || null,
       exercise_name: normalizedExercise.exerciseName,
       exercise_order: normalizedExercise.order,
       planned_sets: normalizedExercise.plannedSets,
@@ -785,6 +1014,9 @@
     createClient,
     updateClient,
     markClientPaid,
+    listLibraryExercises,
+    upsertLibraryExercise,
+    deleteLibraryExercise,
     listSportsProfiles,
     upsertSportsProfile,
     listSportsConsiderations,
